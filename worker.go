@@ -82,17 +82,13 @@ func (w *worker) work(ctx context.Context) error {
 		split := strings.Split(payload, "/")
 		switch len(split) {
 		case 1:
-			log.Printf("searching issues for user %s", payload)
 			if err := w.searchIssues(ctx, payload); err != nil {
 				return err
 			}
-			log.Printf("done searching issues for user %s", payload)
 		case 2:
-			log.Printf("listing issues for repo %s", payload)
 			if err := w.listIssues(ctx, split[0], split[1]); err != nil {
 				return err
 			}
-			log.Printf("done listing issues for user %s", payload)
 		default:
 			log.Printf("don't know what to do with payload %s", payload)
 			return nil
@@ -114,6 +110,11 @@ func (w *worker) searchIssues(ctx context.Context, user string) error {
 		if resp != nil {
 			b, _ := json.Marshal(resp.Rate)
 			if err := w.redis.Set("github-search-rate", b, time.Until(resp.Reset.Time)).Err(); err != nil {
+				log.Print(err)
+			}
+			if err := w.redis.LPush("github-requests", &githubRequest{
+				Timestamp: time.Now(), HTTPStatus: resp.StatusCode, Page: opts.Page, LastPage: resp.LastPage, Description: fmt.Sprintf("search issues commented by %s", user),
+			}).Err(); err != nil {
 				log.Print(err)
 			}
 		}
@@ -159,7 +160,11 @@ func (w *worker) listIssues(ctx context.Context, owner, repo string) error {
 			if err := w.redis.Set("github-core-rate", b, time.Until(resp.Reset.Time)).Err(); err != nil {
 				log.Print(err)
 			}
-			log.Println("list issues:", owner, repo, resp.NextPage, resp.LastPage)
+			if err := w.redis.LPush("github-requests", &githubRequest{
+				Timestamp: time.Now(), HTTPStatus: resp.StatusCode, Page: opts.Page, LastPage: resp.LastPage, Description: fmt.Sprintf("list %s/%s issues", owner, repo),
+			}).Err(); err != nil {
+				log.Print(err)
+			}
 		}
 		if _, ok := err.(*github.RateLimitError); ok {
 			select {
@@ -225,6 +230,11 @@ func (w *worker) listComments(ctx context.Context, issue *github.Issue) error {
 		if resp != nil {
 			b, _ := json.Marshal(resp.Rate)
 			if err := w.redis.Set("github-core-rate", b, time.Until(resp.Reset.Time)).Err(); err != nil {
+				log.Print(err)
+			}
+			if err := w.redis.LPush("github-requests", &githubRequest{
+				Timestamp: time.Now(), HTTPStatus: resp.StatusCode, Page: opts.Page, LastPage: resp.LastPage, Description: fmt.Sprintf("list #%d comments", issue.GetNumber()),
+			}).Err(); err != nil {
 				log.Print(err)
 			}
 		}

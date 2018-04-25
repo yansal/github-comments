@@ -1,22 +1,16 @@
-<html>
+{{template "head" .}}
+<h2>GitHub stats</h2>
+{{with .CoreRate}}
+<div>Core rate limit: {{.Remaining}}/{{.Limit}}, reset in {{until .Reset.Time}}</div>
+{{end}}
+{{with .SearchRate}}
+<div>Search rate limit: {{.Remaining}}/{{.Limit}}, reset in {{until .Reset.Time}}</div>
+{{end}}
+{{with .Requests}}
+<div>Request log:
+    <pre>{{range .}}{{.}}
+{{end}}</pre>
 
-<head>
-    <meta charset='utf-8'>
-    <style>
-        .display-none {
-            display: none
-        }
-    </style>
-    <title>GitHub comments</title>
-</head>
-
-<body>
-    <p><a href='/'>root</a> <a href='/_status'>status</a></p>
-    <p>Page generated in {{.Duration}}</p>
-    {{with .CoreRate}}
-    <p>GitHub core rate limit: {{.Remaining}}/{{.Limit}}, reset in {{until .Reset.Time}}</p>
-    {{end}}
-    {{with .SearchRate}}
-    <p>GitHub search rate limit: {{.Remaining}}/{{.Limit}}, reset in {{until .Reset.Time}}</p>
-    {{end}}
-</body>
+</div>
+{{end}}
+{{template "foot" .}}

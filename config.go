@@ -2,9 +2,9 @@ package main
 
 import (
 	"context"
-	"html/template"
 	"log"
 	"os"
+	"text/template"
 	"time"
 
 	"github.com/go-redis/redis"

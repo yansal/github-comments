@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"strings"
@@ -55,6 +56,23 @@ func handleError(h handlerFunc) http.HandlerFunc {
 	}
 }
 
+type githubRequest struct {
+	Timestamp      time.Time
+	HTTPStatus     int
+	Page, LastPage int
+	Description    string
+}
+
+func (r *githubRequest) MarshalBinary() ([]byte, error) {
+	return json.Marshal(r)
+}
+func (r *githubRequest) UnmarshalBinary(data []byte) error {
+	return json.Unmarshal(data, r)
+}
+func (r githubRequest) String() string {
+	return fmt.Sprintf("%s: %d: %s: page %d/%d", r.Timestamp.Format(time.RFC3339), r.HTTPStatus, r.Description, r.Page, r.LastPage)
+}
+
 func statusHandler(cfg *config) http.HandlerFunc {
 	return handleError(func(w http.ResponseWriter, r *http.Request) error {
 		start := time.Now()
@@ -63,6 +81,7 @@ func statusHandler(cfg *config) http.HandlerFunc {
 			SearchRate *github.Rate
 			CoreRate   *github.Rate
 			Duration   time.Duration
+			Requests   []githubRequest
 		}
 
 		b, err := cfg.redis.Get("github-search-rate").Bytes()
@@ -87,6 +106,20 @@ func statusHandler(cfg *config) http.HandlerFunc {
 				log.Print(err)
 			} else {
 				data.CoreRate = &coreRate
+			}
+		}
+
+		ss, err := cfg.redis.LRange("github-requests", 0, 100).Result()
+		if err == redis.Nil {
+		} else if err != nil {
+			log.Print(err)
+		} else {
+			for i := range ss {
+				var r githubRequest
+				if err := json.Unmarshal([]byte(ss[i]), &r); err != nil {
+					log.Print(err)
+				}
+				data.Requests = append(data.Requests, r)
 			}
 		}
 		data.Duration = time.Since(start)
