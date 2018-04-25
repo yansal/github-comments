@@ -22,7 +22,7 @@
     <div>
         <hr>
         <img src='{{.User.AvatarURL}}' width=44 height=44 onclick='getElementById("{{.ID}}-body").classList.toggle("display-none")'>
-        <a href='{{.HTMLURL}}'>{{.User.Login}} got {{.Reactions.TotalCount}} reactions on {{.UpdatedAt.Format "Jan 2, 2006"}}</a>
+        <a href='/{{.User.Login}}'>{{.User.Login}}</a> got <a href='{{.HTMLURL}}'>{{.Reactions.TotalCount}} reactions on {{.UpdatedAt.Format "Jan 2, 2006"}}</a>
 
         <div id='{{.ID}}-body' class='display-none'>{{markdown .Body}}</div>
 
