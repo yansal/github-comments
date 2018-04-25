@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"html/template"
 	"log"
 	"os"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"github.com/jmoiron/sqlx"
 	"github.com/lib/pq"
 	"golang.org/x/oauth2"
+	blackfriday "gopkg.in/russross/blackfriday.v2"
 )
 
 type config struct {
@@ -19,6 +21,7 @@ type config struct {
 	redis        *redis.Client
 	port         string
 	githubClient *github.Client
+	template     *template.Template
 }
 
 func newConfig() *config {
@@ -63,6 +66,18 @@ func newConfig() *config {
 			),
 		),
 	)
+
+	cfg.template = template.Must(template.New("").Funcs(template.FuncMap{
+		"markdown": func(in string) string {
+			return string(blackfriday.Run(
+				[]byte(in),
+				blackfriday.WithExtensions(blackfriday.CommonExtensions|blackfriday.HardLineBreak),
+			))
+		},
+		"until": func(t time.Time) string {
+			return time.Until(t).Truncate(time.Second).String()
+		},
+	}).ParseGlob("templates/*.html"))
 
 	return cfg
 }
