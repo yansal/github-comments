@@ -1,3 +1,5 @@
+begin;
+
 create table issues(j jsonb not null, check(j?'id'));
 create unique index on issues(((j->>'id')::int));
 
@@ -7,19 +9,19 @@ create index on comments (((j#>>'{reactions,total_count}')::int));
 create index on comments ((j#>>'{user,login}'));
 create index on comments ((j->>'issue_url'));
 
-create table users(login text primary key, created_at timestamp with time zone default current_timestamp);
+create table jobs(id bigserial primary key, type text not null, payload jsonb not null unique, created_at timestamp with time zone default current_timestamp);
 
--- notify worker after insert
-create function
-  notify_users()
+create function  notify_jobs()
   returns trigger
   as $$
   begin
-    notify users;
+    notify jobs;
     return null;
   end;
 $$ language plpgsql;
 
-create trigger notify_users after insert
-  on users
-execute procedure notify_users();
+create trigger notify_jobs after insert
+  on jobs
+execute procedure notify_jobs();
+
+commit;

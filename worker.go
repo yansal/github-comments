@@ -8,7 +8,6 @@ import (
 	"log"
 	"regexp"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/google/go-github/github"
@@ -36,7 +35,7 @@ type worker struct {
 }
 
 func (w *worker) run() error {
-	if err := w.listener.Listen("users"); err != nil {
+	if err := w.listener.Listen("jobs"); err != nil {
 		return err
 	}
 
@@ -44,9 +43,7 @@ func (w *worker) run() error {
 	for i := 0; i < 2; i++ {
 		g.Go(func() error {
 			for {
-				if err := w.work(ctx); err != nil {
-					return err
-				}
+				w.workLoop(ctx)
 				select {
 				case <-w.listener.Notify:
 				case <-ctx.Done():
@@ -58,140 +55,170 @@ func (w *worker) run() error {
 	return g.Wait()
 }
 
-func (w *worker) work(ctx context.Context) error {
+func (w *worker) workLoop(ctx context.Context) {
 	for {
-		// TODO: abstract db transaction in store
-		tx, err := w.store.BeginTxx(ctx, nil)
-		if err != nil {
-			return errors.WithStack(err)
-		}
-		defer func() {
-			if err := tx.Rollback(); err != sql.ErrTxDone && err != nil {
-				log.Printf("%+v", errors.WithStack(err))
-			}
-		}()
-
-		var payload string
-		if err := tx.Get(&payload, `select login from users order by created_at limit 1 for update skip locked`); err == sql.ErrNoRows {
-			return nil
+		if err := w.work(ctx); errors.Cause(err) == context.Canceled {
+			return
 		} else if err != nil {
-			return errors.WithStack(err)
-		}
-
-		split := strings.Split(payload, "/")
-		switch len(split) {
-		case 1:
-			if err := w.searchIssues(ctx, payload); err != nil {
-				return err
-			}
-		case 2:
-			if err := w.listIssues(ctx, split[0], split[1]); err != nil {
-				return err
-			}
-		default:
-			log.Printf("don't know what to do with payload %s", payload)
-			return nil
-		}
-		if _, err := tx.Exec(`delete from users where login = $1`, payload); err != nil {
-			return errors.WithStack(err)
-		}
-		if err := tx.Commit(); err != nil {
-			return errors.WithStack(err)
+			log.Printf("%+v", err)
 		}
 	}
 }
-
-func (w *worker) searchIssues(ctx context.Context, user string) error {
-	query := fmt.Sprintf(`commenter:"%s"`, user)
-	opts := &github.SearchOptions{Sort: "updated", Order: "desc", ListOptions: github.ListOptions{PerPage: 100}}
-	for {
-		result, resp, err := w.githubClient.Search.Issues(ctx, query, opts)
-		if resp != nil {
-			b, _ := json.Marshal(resp.Rate)
-			if err := w.cache.Set("github-search-rate", b, time.Until(resp.Reset.Time)); err != nil {
-				log.Print(err)
-			}
-			if err := w.cache.LPush("github-requests", &githubRequest{
-				Timestamp: time.Now(), HTTPStatus: resp.StatusCode, Page: opts.Page, LastPage: resp.LastPage, Description: fmt.Sprintf("search issues commented by %s", user),
-			}); err != nil {
-				log.Print(err)
-			}
+func (w *worker) work(ctx context.Context) error {
+	// TODO: abstract db transaction in store
+	tx, err := w.store.BeginTxx(ctx, nil)
+	if err != nil {
+		return errors.WithStack(err)
+	}
+	defer func() {
+		if err := tx.Rollback(); err != sql.ErrTxDone && err != nil {
+			log.Printf("%+v", errors.WithStack(err))
 		}
-		if _, ok := err.(*github.RateLimitError); ok {
-			select {
-			case <-time.After(time.Until(resp.Reset.Time)):
-				continue
-			case <-ctx.Done():
-				return ctx.Err()
-			}
-		} else if gerr, ok := err.(*github.ErrorResponse); ok {
-			log.Print(gerr)
-			return nil
-		} else if err != nil {
+	}()
+
+	var job struct {
+		ID      int64
+		Type    string
+		Payload []byte
+	}
+	if err := tx.Get(&job, `select id, type, payload from jobs order by created_at limit 1 for update skip locked`); err == sql.ErrNoRows {
+		return nil
+	} else if err != nil {
+		return errors.WithStack(err)
+	}
+
+	switch job.Type {
+	case "repo":
+		var repo jobRepo
+		if err := json.Unmarshal(job.Payload, &repo); err != nil {
 			return errors.WithStack(err)
 		}
+		if err := w.listIssues(ctx, repo.Owner, repo.Name, repo.Page); err != nil {
+			return err
+		}
+	case "user":
+		var user jobUser
+		if err := json.Unmarshal(job.Payload, &user); err != nil {
+			return errors.WithStack(err)
+		}
+		if err := w.searchIssues(ctx, user.Login, user.Page); err != nil {
+			return err
+		}
+	case "issue":
+		var issue jobIssue
+		if err := json.Unmarshal(job.Payload, &issue); err != nil {
+			return errors.WithStack(err)
+		}
+		if err := w.listComments(ctx, issue.URL, issue.Page); err != nil {
+			return err
+		}
+	default:
+		return errors.Errorf("don't know what to do with job of type %s", job.Type)
+	}
 
-		for i := range result.Issues {
-			if err := w.listComments(ctx, &result.Issues[i]); err != nil {
-				return err
-			}
+	if _, err := tx.Exec(`delete from jobs where id = $1`, job.ID); err != nil {
+		return errors.WithStack(err)
+	}
+	return errors.WithStack(tx.Commit())
+}
 
-			if err := w.store.insertIssue(ctx, &result.Issues[i]); err != nil {
-				return err
-			}
+func (w *worker) searchIssues(ctx context.Context, user string, page int) error {
+	query := fmt.Sprintf(`commenter:"%s"`, user)
+	opts := &github.SearchOptions{Sort: "updated", Order: "desc", ListOptions: github.ListOptions{Page: page, PerPage: 100}}
+	result, resp, err := w.githubClient.Search.Issues(ctx, query, opts)
+	if resp != nil {
+		b, _ := json.Marshal(resp.Rate)
+		if err := w.cache.Set("github-search-rate", b, time.Until(resp.Reset.Time)); err != nil {
+			log.Print(err)
+		}
+		if err := w.cache.LPush("github-requests", &githubRequest{
+			Timestamp: time.Now(), HTTPStatus: resp.StatusCode, Page: opts.Page, LastPage: resp.LastPage, Description: fmt.Sprintf("search issues commented by %s", user),
+		}); err != nil {
+			log.Print(err)
+		}
+	}
+
+	if _, ok := err.(*github.RateLimitError); ok {
+		select {
+		case <-time.After(time.Until(resp.Reset.Time)):
+			return w.store.insertJobUser(ctx, jobUser{Login: user, Page: page})
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	} else if err != nil {
+		return errors.WithStack(err)
+	}
+
+	for i := range result.Issues {
+		if err := w.store.insertJobIssue(ctx, jobIssue{URL: result.Issues[i].GetURL()}); err != nil {
+			return err
 		}
 
-		if resp.NextPage <= opts.ListOptions.Page {
-			break
+		if err := w.store.insertIssue(ctx, &result.Issues[i]); err != nil {
+			return err
 		}
-		opts.ListOptions.Page = resp.NextPage
+	}
+
+	if resp.NextPage > opts.ListOptions.Page {
+		return w.store.insertJobUser(ctx, jobUser{Login: user, Page: resp.NextPage})
 	}
 	return nil
 }
 
-func (w *worker) listIssues(ctx context.Context, owner, repo string) error {
+func (w *worker) listIssues(ctx context.Context, owner, repo string, page int) error {
 	// TODO: order by reactions?
-	opts := &github.IssueListByRepoOptions{Sort: "updated", State: "all", ListOptions: github.ListOptions{PerPage: 100}}
-	for {
-		issues, resp, err := w.githubClient.Issues.ListByRepo(ctx, owner, repo, opts)
-		if resp != nil {
-			b, _ := json.Marshal(resp.Rate)
-			if err := w.cache.Set("github-core-rate", b, time.Until(resp.Reset.Time)); err != nil {
-				log.Print(err)
-			}
-			if err := w.cache.LPush("github-requests", &githubRequest{
-				Timestamp: time.Now(), HTTPStatus: resp.StatusCode, Page: opts.Page, LastPage: resp.LastPage, Description: fmt.Sprintf("list %s/%s issues", owner, repo),
-			}); err != nil {
-				log.Print(err)
-			}
+	opts := &github.IssueListByRepoOptions{Sort: "updated", State: "all", ListOptions: github.ListOptions{Page: page, PerPage: 100}}
+	issues, resp, err := w.githubClient.Issues.ListByRepo(ctx, owner, repo, opts)
+	if resp != nil {
+		b, _ := json.Marshal(resp.Rate)
+		if err := w.cache.Set("github-core-rate", b, time.Until(resp.Reset.Time)); err != nil {
+			log.Print(err)
 		}
-		if _, ok := err.(*github.RateLimitError); ok {
-			select {
-			case <-time.After(time.Until(resp.Reset.Time)):
-				continue
-			case <-ctx.Done():
-				return ctx.Err()
-			}
-		} else if gerr, ok := err.(*github.ErrorResponse); ok {
-			log.Print(gerr)
-			return nil
-		} else if err != nil {
-			return errors.WithStack(err)
+		if err := w.cache.LPush("github-requests", &githubRequest{
+			Timestamp: time.Now(), HTTPStatus: resp.StatusCode, Page: opts.Page, LastPage: resp.LastPage, Description: fmt.Sprintf("list %s/%s issues", owner, repo),
+		}); err != nil {
+			log.Print(err)
 		}
-		for i := range issues {
-			if err := w.listComments(ctx, issues[i]); err != nil {
+	}
+	if _, ok := err.(*github.RateLimitError); ok {
+		select {
+		case <-time.After(time.Until(resp.Reset.Time)):
+			return w.store.insertJobRepo(ctx, jobRepo{Owner: owner, Name: repo, Page: page})
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	} else if err != nil {
+		return errors.WithStack(err)
+	}
+
+	for i := range issues {
+		issue := issues[i]
+		// Don't list issue comments if the issue is already stored up-to-date with all comments
+		existing, err := w.store.getIssue(ctx, issue.GetID())
+		if err != nil {
+			return err
+		}
+		if existing.GetUpdatedAt().Equal(issue.GetUpdatedAt()) {
+			count, err := w.store.countCommentsForIssue(ctx, issue)
+			if err != nil {
 				return err
 			}
-
-			if err := w.store.insertIssue(ctx, issues[i]); err != nil {
-				return err
+			if issue.GetComments() <= count {
+				return nil
 			}
 		}
 
-		if resp.NextPage <= opts.ListOptions.Page {
-			break
+		if err := w.store.insertJobIssue(ctx, jobIssue{URL: issue.GetURL()}); err != nil {
+			return err
 		}
-		opts.ListOptions.Page = resp.NextPage
+
+		if err := w.store.insertIssue(ctx, issues[i]); err != nil {
+			return err
+		}
+	}
+
+	if resp.NextPage > opts.ListOptions.Page {
+		return w.store.insertJobRepo(ctx, jobRepo{Owner: owner, Name: repo, Page: resp.NextPage})
 	}
 	return nil
 }
@@ -201,25 +228,10 @@ var (
 	commentURLRegexp = regexp.MustCompile(`^https://api\.github\.com/repos/([a-zA-Z\d\.-]+)/([a-zA-Z\d\._-]+)/issues/comments/(\d+)$`)
 )
 
-func (w *worker) listComments(ctx context.Context, issue *github.Issue) error {
-	// Don't list issue comments if the issue is already stored up-to-date with all comments
-	existing, err := w.store.getIssue(ctx, issue.GetID())
-	if err != nil {
-		return err
-	}
-	if existing.GetUpdatedAt().Equal(issue.GetUpdatedAt()) {
-		count, err := w.store.countCommentsForIssue(ctx, issue)
-		if err != nil {
-			return err
-		}
-		if issue.GetComments() <= count {
-			return nil
-		}
-	}
-
-	match := issueURLRegexp.FindStringSubmatch(issue.GetURL())
+func (w *worker) listComments(ctx context.Context, issueURL string, page int) error {
+	match := issueURLRegexp.FindStringSubmatch(issueURL)
 	if len(match) < 4 {
-		return errors.Errorf("couldn't match %s", issue.GetURL())
+		return errors.Errorf("couldn't match %s", issueURL)
 	}
 	owner := match[1]
 	repo := match[2]
@@ -228,44 +240,39 @@ func (w *worker) listComments(ctx context.Context, issue *github.Issue) error {
 		return errors.WithStack(err)
 	}
 
-	opts := &github.IssueListCommentsOptions{ListOptions: github.ListOptions{PerPage: 100}}
-	for {
-		comments, resp, err := w.githubClient.Issues.ListComments(ctx, owner, repo, number, opts)
-		if resp != nil {
-			b, _ := json.Marshal(resp.Rate)
-			if err := w.cache.Set("github-core-rate", b, time.Until(resp.Reset.Time)); err != nil {
-				log.Print(err)
-			}
-			if err := w.cache.LPush("github-requests", &githubRequest{
-				Timestamp: time.Now(), HTTPStatus: resp.StatusCode, Page: opts.Page, LastPage: resp.LastPage, Description: fmt.Sprintf("list #%d comments", issue.GetNumber()),
-			}); err != nil {
-				log.Print(err)
-			}
+	opts := &github.IssueListCommentsOptions{ListOptions: github.ListOptions{Page: page, PerPage: 100}}
+	comments, resp, err := w.githubClient.Issues.ListComments(ctx, owner, repo, number, opts)
+	if resp != nil {
+		b, _ := json.Marshal(resp.Rate)
+		if err := w.cache.Set("github-core-rate", b, time.Until(resp.Reset.Time)); err != nil {
+			log.Print(err)
 		}
-		if _, ok := err.(*github.RateLimitError); ok {
-			select {
-			case <-time.After(time.Until(resp.Reset.Time)):
-				continue
-			case <-ctx.Done():
-				return ctx.Err()
-			}
-		} else if gerr, ok := err.(*github.ErrorResponse); ok {
-			log.Print(gerr)
-			return nil
-		} else if err != nil {
-			return errors.WithStack(err)
+		if err := w.cache.LPush("github-requests", &githubRequest{
+			Timestamp: time.Now(), HTTPStatus: resp.StatusCode, Page: opts.Page, LastPage: resp.LastPage, Description: fmt.Sprintf("list %s/%s#%d comments", owner, repo, number),
+		}); err != nil {
+			log.Print(err)
 		}
+	}
 
-		for i := range comments {
-			if err := w.store.insertComment(ctx, comments[i]); err != nil {
-				return err
-			}
+	if _, ok := err.(*github.RateLimitError); ok {
+		select {
+		case <-time.After(time.Until(resp.Reset.Time)):
+			return w.store.insertJobIssue(ctx, jobIssue{URL: issueURL, Page: page})
+		case <-ctx.Done():
+			return ctx.Err()
 		}
+	} else if err != nil {
+		return errors.WithStack(err)
+	}
 
-		if resp.NextPage <= opts.ListOptions.Page {
-			break
+	for i := range comments {
+		if err := w.store.insertComment(ctx, comments[i]); err != nil {
+			return err
 		}
-		opts.ListOptions.Page = resp.NextPage
+	}
+
+	if resp.NextPage > opts.ListOptions.Page {
+		return w.store.insertJobIssue(ctx, jobIssue{URL: issueURL, Page: resp.NextPage})
 	}
 	return nil
 }

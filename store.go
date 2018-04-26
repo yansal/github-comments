@@ -110,7 +110,35 @@ func (s *store) insertIssue(ctx context.Context, issue *github.Issue) error {
 	return errors.WithStack(err)
 }
 
-func (s *store) insertPayload(ctx context.Context, payload string) error {
-	_, err := s.Exec(`insert into users(login) values($1) on conflict do nothing`, payload)
+type jobRepo struct {
+	Owner, Name string
+	Page        int
+}
+
+func (s *store) insertJobRepo(ctx context.Context, repo jobRepo) error {
+	b, _ := json.Marshal(repo)
+	_, err := s.Exec(`insert into jobs(type, payload) values($1, $2) on conflict do nothing`, "repo", b)
+	return errors.WithStack(err)
+}
+
+type jobIssue struct {
+	URL  string
+	Page int
+}
+
+func (s *store) insertJobIssue(ctx context.Context, issue jobIssue) error {
+	b, _ := json.Marshal(issue)
+	_, err := s.Exec(`insert into jobs(type, payload) values($1, $2) on conflict do nothing`, "issue", b)
+	return errors.WithStack(err)
+}
+
+type jobUser struct {
+	Login string
+	Page  int
+}
+
+func (s *store) insertJobUser(ctx context.Context, user jobUser) error {
+	b, _ := json.Marshal(user)
+	_, err := s.Exec(`insert into jobs(type, payload) values($1, $2) on conflict do nothing`, "user", b)
 	return errors.WithStack(err)
 }

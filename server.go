@@ -124,7 +124,8 @@ func rootHandler(cfg *config) http.HandlerFunc {
 			if err != nil {
 				return err
 			}
-			if err := cfg.store.insertPayload(ctx, strings.Join(split[1:], "/")); err != nil {
+
+			if err := cfg.store.insertJobRepo(ctx, jobRepo{Owner: owner, Name: repo}); err != nil {
 				return err
 			}
 		case len(split) >= 2 && split[1] != "":
@@ -133,7 +134,7 @@ func rootHandler(cfg *config) http.HandlerFunc {
 			if err != nil {
 				return err
 			}
-			if err := cfg.store.insertPayload(ctx, user); err != nil {
+			if err := cfg.store.insertJobUser(ctx, jobUser{Login: user}); err != nil {
 				return err
 			}
 		default:
