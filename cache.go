@@ -53,5 +53,18 @@ func (r *githubRequest) UnmarshalBinary(data []byte) error {
 	return json.Unmarshal(data, r)
 }
 func (r githubRequest) String() string {
-	return fmt.Sprintf("%s: %d: %s: page %d/%d", r.Timestamp.Format(time.RFC3339), r.HTTPStatus, r.Description, r.Page, r.LastPage)
+	s := fmt.Sprintf("%s: %d: %s", r.Timestamp.Format(time.RFC3339), r.HTTPStatus, r.Description)
+	if r.HTTPStatus != 200 {
+		return s
+	}
+
+	page := r.Page
+	if page == 0 {
+		page = 1
+	}
+	lastPage := r.LastPage
+	if lastPage == 0 {
+		lastPage = page
+	}
+	return fmt.Sprintf("%s (page %d/%d)", s, page, lastPage)
 }
