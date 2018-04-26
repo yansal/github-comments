@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/go-redis/redis"
+	"github.com/google/go-github/github"
 	"github.com/pkg/errors"
 )
 
@@ -40,10 +41,25 @@ func (cache *cache) Set(key string, value interface{}, expiration time.Duration)
 }
 
 type githubRequest struct {
-	Message        string
-	Timestamp      time.Time
-	HTTPStatus     int
-	Page, LastPage int
+	Timestamp     time.Time
+	Message       string
+	ListOptions   github.ListOptions
+	StatusCode    int
+	ContentLength int64
+	LastPage      int
+	Duration      time.Duration
+}
+
+func newGitHubRequest(message string, opts github.ListOptions, resp *github.Response, duration time.Duration) *githubRequest {
+	return &githubRequest{
+		Timestamp:     time.Now(),
+		Message:       message,
+		ListOptions:   opts,
+		StatusCode:    resp.StatusCode,
+		ContentLength: resp.ContentLength,
+		LastPage:      resp.LastPage,
+		Duration:      duration,
+	}
 }
 
 func (r *githubRequest) MarshalBinary() ([]byte, error) {
@@ -53,18 +69,17 @@ func (r *githubRequest) UnmarshalBinary(data []byte) error {
 	return json.Unmarshal(data, r)
 }
 func (r githubRequest) String() string {
-	s := fmt.Sprintf("%s: %d: %s", r.Timestamp.Format(time.RFC3339), r.HTTPStatus, r.Message)
-	if r.HTTPStatus != 200 {
-		return s
+	message := r.Message
+	if r.StatusCode != 200 {
+		page := r.ListOptions.Page
+		if page == 0 {
+			page = 1
+		}
+		lastPage := r.LastPage
+		if lastPage == 0 {
+			lastPage = page
+		}
+		message = fmt.Sprintf("%s (%d/%d)", message, page, lastPage)
 	}
-
-	page := r.Page
-	if page == 0 {
-		page = 1
-	}
-	lastPage := r.LastPage
-	if lastPage == 0 {
-		lastPage = page
-	}
-	return fmt.Sprintf("%s (page %d/%d)", s, page, lastPage)
+	return fmt.Sprintf("ts=%s msg=%q status=%d duration=%s bytes=%d", r.Timestamp.Format(time.RFC3339), r.Message, r.StatusCode, r.Duration, r.ContentLength)
 }

@@ -138,15 +138,15 @@ func (w *worker) work(ctx context.Context) error {
 func (w *worker) searchIssues(ctx context.Context, user string, page int) error {
 	query := fmt.Sprintf(`commenter:"%s"`, user)
 	opts := &github.SearchOptions{Sort: "updated", Order: "desc", ListOptions: github.ListOptions{Page: page, PerPage: 100}}
+	start := time.Now()
 	result, resp, err := w.githubClient.Search.Issues(ctx, query, opts)
+	duration := time.Since(start)
 	if resp != nil {
 		b, _ := json.Marshal(resp.Rate)
 		if err := w.cache.Set("github-search-rate", b, time.Until(resp.Reset.Time)); err != nil {
 			log.Print(err)
 		}
-		if err := w.cache.LPush("github-requests", &githubRequest{
-			Timestamp: time.Now(), HTTPStatus: resp.StatusCode, Page: opts.Page, LastPage: resp.LastPage, Message: fmt.Sprintf("search issues commented by %s", user),
-		}); err != nil {
+		if err := w.cache.LPush("github-requests", newGitHubRequest(fmt.Sprintf("search issues commented by %s", user), opts.ListOptions, resp, duration)); err != nil {
 			log.Print(err)
 		}
 	}
@@ -180,15 +180,15 @@ func (w *worker) searchIssues(ctx context.Context, user string, page int) error 
 func (w *worker) listIssues(ctx context.Context, owner, repo string, page int) error {
 	// TODO: order by reactions?
 	opts := &github.IssueListByRepoOptions{Sort: "updated", State: "all", ListOptions: github.ListOptions{Page: page, PerPage: 100}}
+	start := time.Now()
 	issues, resp, err := w.githubClient.Issues.ListByRepo(ctx, owner, repo, opts)
+	duration := time.Since(start)
 	if resp != nil {
 		b, _ := json.Marshal(resp.Rate)
 		if err := w.cache.Set("github-core-rate", b, time.Until(resp.Reset.Time)); err != nil {
 			log.Print(err)
 		}
-		if err := w.cache.LPush("github-requests", &githubRequest{
-			Timestamp: time.Now(), HTTPStatus: resp.StatusCode, Page: opts.Page, LastPage: resp.LastPage, Message: fmt.Sprintf("list %s/%s issues", owner, repo),
-		}); err != nil {
+		if err := w.cache.LPush("github-requests", newGitHubRequest(fmt.Sprintf("list %s/%s issues", owner, repo), opts.ListOptions, resp, duration)); err != nil {
 			log.Print(err)
 		}
 	}
@@ -237,15 +237,15 @@ func (w *worker) listComments(ctx context.Context, issueURL string, page int) er
 	}
 
 	opts := &github.IssueListCommentsOptions{ListOptions: github.ListOptions{Page: page, PerPage: 100}}
+	start := time.Now()
 	comments, resp, err := w.githubClient.Issues.ListComments(ctx, owner, repo, number, opts)
+	duration := time.Since(start)
 	if resp != nil {
 		b, _ := json.Marshal(resp.Rate)
 		if err := w.cache.Set("github-core-rate", b, time.Until(resp.Reset.Time)); err != nil {
 			log.Print(err)
 		}
-		if err := w.cache.LPush("github-requests", &githubRequest{
-			Timestamp: time.Now(), HTTPStatus: resp.StatusCode, Page: opts.Page, LastPage: resp.LastPage, Message: fmt.Sprintf("list %s/%s#%d comments", owner, repo, number),
-		}); err != nil {
+		if err := w.cache.LPush("github-requests", newGitHubRequest(fmt.Sprintf("list %s/%s#%d comments", owner, repo, number), opts.ListOptions, resp, duration)); err != nil {
 			log.Print(err)
 		}
 	}
