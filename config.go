@@ -17,8 +17,8 @@ import (
 
 type config struct {
 	store        *store
+	cache        *cache
 	listener     *pq.Listener
-	redis        *redis.Client
 	port         string
 	githubClient *github.Client
 	template     *template.Template
@@ -45,10 +45,11 @@ func newConfig() *config {
 	if err != nil {
 		panic(err)
 	}
-	cfg.redis = redis.NewClient(opts)
-	if err := cfg.redis.Ping().Err(); err != nil {
+	redis := redis.NewClient(opts)
+	if err := redis.Ping().Err(); err != nil {
 		panic(err)
 	}
+	cfg.cache = newCache(redis)
 
 	port := os.Getenv("PORT")
 	if port == "" {

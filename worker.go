@@ -11,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-redis/redis"
 	"github.com/google/go-github/github"
 	"github.com/lib/pq"
 	"github.com/pkg/errors"
@@ -23,7 +22,7 @@ func newWorker(ctx context.Context, cfg *config) *worker {
 		ctx:          ctx,
 		store:        cfg.store,
 		listener:     cfg.listener,
-		redis:        cfg.redis,
+		cache:        cfg.cache,
 		githubClient: cfg.githubClient,
 	}
 }
@@ -32,7 +31,7 @@ type worker struct {
 	ctx          context.Context
 	store        *store
 	listener     *pq.Listener
-	redis        *redis.Client
+	cache        *cache
 	githubClient *github.Client
 }
 
@@ -109,12 +108,12 @@ func (w *worker) searchIssues(ctx context.Context, user string) error {
 		result, resp, err := w.githubClient.Search.Issues(ctx, query, opts)
 		if resp != nil {
 			b, _ := json.Marshal(resp.Rate)
-			if err := w.redis.Set("github-search-rate", b, time.Until(resp.Reset.Time)).Err(); err != nil {
+			if err := w.cache.Set("github-search-rate", b, time.Until(resp.Reset.Time)); err != nil {
 				log.Print(err)
 			}
-			if err := w.redis.LPush("github-requests", &githubRequest{
+			if err := w.cache.LPush("github-requests", &githubRequest{
 				Timestamp: time.Now(), HTTPStatus: resp.StatusCode, Page: opts.Page, LastPage: resp.LastPage, Description: fmt.Sprintf("search issues commented by %s", user),
-			}).Err(); err != nil {
+			}); err != nil {
 				log.Print(err)
 			}
 		}
@@ -157,12 +156,12 @@ func (w *worker) listIssues(ctx context.Context, owner, repo string) error {
 		issues, resp, err := w.githubClient.Issues.ListByRepo(ctx, owner, repo, opts)
 		if resp != nil {
 			b, _ := json.Marshal(resp.Rate)
-			if err := w.redis.Set("github-core-rate", b, time.Until(resp.Reset.Time)).Err(); err != nil {
+			if err := w.cache.Set("github-core-rate", b, time.Until(resp.Reset.Time)); err != nil {
 				log.Print(err)
 			}
-			if err := w.redis.LPush("github-requests", &githubRequest{
+			if err := w.cache.LPush("github-requests", &githubRequest{
 				Timestamp: time.Now(), HTTPStatus: resp.StatusCode, Page: opts.Page, LastPage: resp.LastPage, Description: fmt.Sprintf("list %s/%s issues", owner, repo),
-			}).Err(); err != nil {
+			}); err != nil {
 				log.Print(err)
 			}
 		}
@@ -229,12 +228,12 @@ func (w *worker) listComments(ctx context.Context, issue *github.Issue) error {
 		comments, resp, err := w.githubClient.Issues.ListComments(ctx, owner, repo, number, opts)
 		if resp != nil {
 			b, _ := json.Marshal(resp.Rate)
-			if err := w.redis.Set("github-core-rate", b, time.Until(resp.Reset.Time)).Err(); err != nil {
+			if err := w.cache.Set("github-core-rate", b, time.Until(resp.Reset.Time)); err != nil {
 				log.Print(err)
 			}
-			if err := w.redis.LPush("github-requests", &githubRequest{
+			if err := w.cache.LPush("github-requests", &githubRequest{
 				Timestamp: time.Now(), HTTPStatus: resp.StatusCode, Page: opts.Page, LastPage: resp.LastPage, Description: fmt.Sprintf("list #%d comments", issue.GetNumber()),
-			}).Err(); err != nil {
+			}); err != nil {
 				log.Print(err)
 			}
 		}

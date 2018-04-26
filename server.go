@@ -3,13 +3,11 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"log"
 	"net/http"
 	"strings"
 	"time"
 
-	"github.com/go-redis/redis"
 	"github.com/google/go-github/github"
 	"github.com/pkg/errors"
 )
@@ -56,23 +54,6 @@ func handleError(h handlerFunc) http.HandlerFunc {
 	}
 }
 
-type githubRequest struct {
-	Timestamp      time.Time
-	HTTPStatus     int
-	Page, LastPage int
-	Description    string
-}
-
-func (r *githubRequest) MarshalBinary() ([]byte, error) {
-	return json.Marshal(r)
-}
-func (r *githubRequest) UnmarshalBinary(data []byte) error {
-	return json.Unmarshal(data, r)
-}
-func (r githubRequest) String() string {
-	return fmt.Sprintf("%s: %d: %s: page %d/%d", r.Timestamp.Format(time.RFC3339), r.HTTPStatus, r.Description, r.Page, r.LastPage)
-}
-
 func statusHandler(cfg *config) http.HandlerFunc {
 	return handleError(func(w http.ResponseWriter, r *http.Request) error {
 		start := time.Now()
@@ -84,11 +65,10 @@ func statusHandler(cfg *config) http.HandlerFunc {
 			Requests   []githubRequest
 		}
 
-		b, err := cfg.redis.Get("github-search-rate").Bytes()
-		if err == redis.Nil {
-		} else if err != nil {
+		b, err := cfg.cache.Get("github-search-rate")
+		if err != nil {
 			log.Print(err)
-		} else {
+		} else if b != nil {
 			var searchRate github.Rate
 			if err := json.Unmarshal(b, &searchRate); err != nil {
 				log.Print(err)
@@ -96,11 +76,10 @@ func statusHandler(cfg *config) http.HandlerFunc {
 				data.SearchRate = &searchRate
 			}
 		}
-		b, err = cfg.redis.Get("github-core-rate").Bytes()
-		if err == redis.Nil {
-		} else if err != nil {
+		b, err = cfg.cache.Get("github-core-rate")
+		if err != nil {
 			log.Print(err)
-		} else {
+		} else if b != nil {
 			var coreRate github.Rate
 			if err := json.Unmarshal(b, &coreRate); err != nil {
 				log.Print(err)
@@ -109,19 +88,18 @@ func statusHandler(cfg *config) http.HandlerFunc {
 			}
 		}
 
-		ss, err := cfg.redis.LRange("github-requests", 0, 100).Result()
-		if err == redis.Nil {
-		} else if err != nil {
+		ss, err := cfg.cache.LRange("github-requests", 0, 100)
+		if err != nil {
 			log.Print(err)
-		} else {
-			for i := range ss {
-				var r githubRequest
-				if err := json.Unmarshal([]byte(ss[i]), &r); err != nil {
-					log.Print(err)
-				}
-				data.Requests = append(data.Requests, r)
-			}
 		}
+		for i := range ss {
+			var r githubRequest
+			if err := json.Unmarshal([]byte(ss[i]), &r); err != nil {
+				log.Print(err)
+			}
+			data.Requests = append(data.Requests, r)
+		}
+
 		data.Duration = time.Since(start)
 		return errors.WithStack(
 			cfg.template.ExecuteTemplate(w, "status.html", data))
