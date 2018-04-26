@@ -59,11 +59,19 @@ func statusHandler(cfg *config) http.HandlerFunc {
 		start := time.Now()
 
 		var data struct {
+			Duration   time.Duration
+			JobCounts  []jobCount
 			SearchRate *github.Rate
 			CoreRate   *github.Rate
-			Duration   time.Duration
 			Requests   []githubRequest
 		}
+
+		ctx := r.Context()
+		jobCounts, err := cfg.store.countJobs(ctx)
+		if err != nil {
+			return err
+		}
+		data.JobCounts = jobCounts
 
 		b, err := cfg.cache.Get("github-search-rate")
 		if err != nil {
@@ -145,8 +153,8 @@ func rootHandler(cfg *config) http.HandlerFunc {
 		}
 
 		data := struct {
-			Comments []github.IssueComment
 			Duration time.Duration
+			Comments []github.IssueComment
 		}{Comments: comments, Duration: time.Since(start)}
 
 		return errors.WithStack(

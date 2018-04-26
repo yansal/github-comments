@@ -81,6 +81,17 @@ func (s *store) countCommentsForIssue(ctx context.Context, issue *github.Issue) 
 	return count, errors.WithStack(err)
 }
 
+type jobCount struct {
+	Type  string
+	Count int
+}
+
+func (s *store) countJobs(ctx context.Context) ([]jobCount, error) {
+	var jobCounts []jobCount
+	err := s.Select(&jobCounts, `select type, count(*) from jobs group by type order by type`)
+	return jobCounts, errors.WithStack(err)
+}
+
 func unmarshalComments(b [][]byte) ([]github.IssueComment, error) {
 	comments := make([]github.IssueComment, len(b))
 	for i := range b {

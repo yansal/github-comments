@@ -1,4 +1,9 @@
 {{template "head" .}}
+<h2>Number of queued jobs</h2>
+{{range .JobCounts}}
+<div>{{.Type}}: {{.Count}}</div>
+{{end}}
+
 <h2>GitHub stats</h2>
 {{with .CoreRate}}
 <div>Core rate limit: {{.Remaining}}/{{.Limit}}, reset in {{until .Reset.Time}}</div>
