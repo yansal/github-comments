@@ -55,6 +55,23 @@ func (s *store) getCommentsForRepo(ctx context.Context, owner, repo string) ([]g
 	return unmarshalComments(dest)
 }
 
+func (s *store) issueIsUpToDate(ctx context.Context, issue *github.Issue) (bool, error) {
+	existing, err := s.getIssue(ctx, issue.GetID())
+	if err != nil {
+		return false, err
+	}
+	if existing.GetUpdatedAt().Equal(issue.GetUpdatedAt()) {
+		count, err := s.countCommentsForIssue(ctx, issue)
+		if err != nil {
+			return false, err
+		}
+		if issue.GetComments() == count {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 func (s *store) countCommentsForIssue(ctx context.Context, issue *github.Issue) (int, error) {
 	var count int
 	err := s.Get(&count,

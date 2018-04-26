@@ -40,7 +40,7 @@ func (cache *cache) Set(key string, value interface{}, expiration time.Duration)
 }
 
 type githubRequest struct {
-	Description    string
+	Message        string
 	Timestamp      time.Time
 	HTTPStatus     int
 	Page, LastPage int
@@ -53,7 +53,7 @@ func (r *githubRequest) UnmarshalBinary(data []byte) error {
 	return json.Unmarshal(data, r)
 }
 func (r githubRequest) String() string {
-	s := fmt.Sprintf("%s: %d: %s", r.Timestamp.Format(time.RFC3339), r.HTTPStatus, r.Description)
+	s := fmt.Sprintf("%s: %d: %s", r.Timestamp.Format(time.RFC3339), r.HTTPStatus, r.Message)
 	if r.HTTPStatus != 200 {
 		return s
 	}

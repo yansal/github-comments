@@ -9,9 +9,15 @@ create index on comments (((j#>>'{reactions,total_count}')::int));
 create index on comments ((j#>>'{user,login}'));
 create index on comments ((j->>'issue_url'));
 
-create table jobs(id bigserial primary key, type text not null, payload jsonb not null unique, created_at timestamp with time zone default current_timestamp);
+create table jobs(
+  id bigserial primary key,
+  type text not null,
+  payload jsonb not null unique,
+  created_at timestamp with time zone default current_timestamp,
+  retry int not null default 0
+);
 
-create function  notify_jobs()
+create function notify_jobs()
   returns trigger
   as $$
   begin
