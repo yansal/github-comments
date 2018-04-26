@@ -172,10 +172,12 @@ func (w *worker) listIssues(ctx context.Context, owner, repo string) error {
 			case <-ctx.Done():
 				return ctx.Err()
 			}
+		} else if gerr, ok := err.(*github.ErrorResponse); ok {
+			log.Print(gerr)
+			return nil
 		} else if err != nil {
 			return errors.WithStack(err)
 		}
-
 		for i := range issues {
 			if err := w.listComments(ctx, issues[i]); err != nil {
 				return err
@@ -194,7 +196,10 @@ func (w *worker) listIssues(ctx context.Context, owner, repo string) error {
 	return nil
 }
 
-var issueURLRegexp = regexp.MustCompile(`^https://api\.github\.com/repos/([a-zA-Z\d\._-]+)/([a-zA-Z\d\._-]+)/issues/(\d+)$`)
+var (
+	issueURLRegexp   = regexp.MustCompile(`^https://api\.github\.com/repos/([a-zA-Z\d\.-]+)/([a-zA-Z\d\._-]+)/issues/(\d+)$`)
+	commentURLRegexp = regexp.MustCompile(`^https://api\.github\.com/repos/([a-zA-Z\d\.-]+)/([a-zA-Z\d\._-]+)/issues/comments/(\d+)$`)
+)
 
 func (w *worker) listComments(ctx context.Context, issue *github.Issue) error {
 	// Don't list issue comments if the issue is already stored up-to-date with all comments
@@ -244,6 +249,9 @@ func (w *worker) listComments(ctx context.Context, issue *github.Issue) error {
 			case <-ctx.Done():
 				return ctx.Err()
 			}
+		} else if gerr, ok := err.(*github.ErrorResponse); ok {
+			log.Print(gerr)
+			return nil
 		} else if err != nil {
 			return errors.WithStack(err)
 		}
