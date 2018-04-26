@@ -124,7 +124,7 @@ func (s *store) insertIssue(ctx context.Context, issue *github.Issue) error {
 	on conflict (((j->>'id')::int)) do update
 	set j = excluded.j
 	where (issues.j->>'updated_at')::timestamp < (excluded.j->>'updated_at')::timestamp`, j)
-	return errors.WithStack(err)
+	return errors.Wrapf(err, "couldn't insert issue %s", issue.GetURL())
 }
 
 type jobRepo struct {
