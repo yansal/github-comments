@@ -1,4 +1,5 @@
 {{template "head" .}}
+
 <h2>Number of queued jobs</h2>
 {{range .JobCounts}}
 <div>{{.Type}}: {{.Count}}</div>
@@ -11,11 +12,29 @@
 {{with .SearchRate}}
 <div>Search rate limit: {{.Remaining}}/{{.Limit}}, reset in {{until .Reset.Time}}</div>
 {{end}}
-{{with .Requests}}
-<div>Request log:
-    <pre>{{range .}}{{.}}
-{{end}}</pre>
 
+<h3>Request log</h3>
+<div id='request-log'>
+    {{range .Requests}}
+    <code>{{.}}</code><br>
+    {{end}}
 </div>
-{{end}}
+
+<script>
+var requestlog = document.getElementById('request-log');
+
+var proto = 'wss:'
+if (location.protocol != 'https:') {
+    proto = 'ws:'
+}
+const ws = new WebSocket(proto + '//' + location.hostname + '/_ws');
+
+ws.addEventListener('message', function (event) {
+    var p = document.createElement('code');
+    var text = document.createTextNode(event.data);
+    p.appendChild(text);
+    p.appendChild(document.createElement('br'));
+    requestlog.prepend(p);
+});
+</script>
 {{template "foot" .}}

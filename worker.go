@@ -146,7 +146,7 @@ func (w *worker) searchIssues(ctx context.Context, user string, page int) error 
 		if err := w.cache.Set("github-search-rate", b, time.Until(resp.Reset.Time)); err != nil {
 			log.Print(err)
 		}
-		if err := w.cache.LPush("github-requests", newGitHubRequest(fmt.Sprintf("search issues commented by %s", user), opts.ListOptions, resp, duration)); err != nil {
+		if err := w.cache.sendToRequestLog(fmt.Sprintf("search issues commented by %s", user), opts.ListOptions, resp, duration); err != nil {
 			log.Print(err)
 		}
 	}
@@ -188,7 +188,7 @@ func (w *worker) listIssues(ctx context.Context, owner, repo string, page int) e
 		if err := w.cache.Set("github-core-rate", b, time.Until(resp.Reset.Time)); err != nil {
 			log.Print(err)
 		}
-		if err := w.cache.LPush("github-requests", newGitHubRequest(fmt.Sprintf("list %s/%s issues", owner, repo), opts.ListOptions, resp, duration)); err != nil {
+		if err := w.cache.sendToRequestLog(fmt.Sprintf("list %s/%s issues", owner, repo), opts.ListOptions, resp, duration); err != nil {
 			log.Print(err)
 		}
 	}
@@ -245,7 +245,7 @@ func (w *worker) listComments(ctx context.Context, issueURL string, page int) er
 		if err := w.cache.Set("github-core-rate", b, time.Until(resp.Reset.Time)); err != nil {
 			log.Print(err)
 		}
-		if err := w.cache.LPush("github-requests", newGitHubRequest(fmt.Sprintf("list %s/%s#%d comments", owner, repo, number), opts.ListOptions, resp, duration)); err != nil {
+		if err := w.cache.sendToRequestLog(fmt.Sprintf("list %s/%s#%d comments", owner, repo, number), opts.ListOptions, resp, duration); err != nil {
 			log.Print(err)
 		}
 	}

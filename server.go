@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/google/go-github/github"
+	"github.com/gorilla/websocket"
 	"github.com/pkg/errors"
 )
 
@@ -16,6 +17,7 @@ func newServer(ctx context.Context, cfg *config) *server {
 	mux := http.NewServeMux()
 	mux.Handle("/favicon.ico", http.NotFoundHandler())
 	mux.Handle("/_status", statusHandler(cfg))
+	mux.Handle("/_ws", wsHandler(cfg))
 	mux.Handle("/", rootHandler(cfg))
 
 	return &server{
@@ -96,7 +98,7 @@ func statusHandler(cfg *config) http.HandlerFunc {
 			}
 		}
 
-		ss, err := cfg.cache.LRange("github-requests", 0, 100)
+		ss, err := cfg.cache.LRange("github-requests", 0, 1000)
 		if err != nil {
 			log.Print(err)
 		}
@@ -111,6 +113,35 @@ func statusHandler(cfg *config) http.HandlerFunc {
 		data.Duration = time.Since(start)
 		return errors.WithStack(
 			cfg.template.ExecuteTemplate(w, "status.html", data))
+	})
+}
+
+var upgrader = websocket.Upgrader{
+	ReadBufferSize:  1024,
+	WriteBufferSize: 1024,
+}
+
+func wsHandler(cfg *config) http.HandlerFunc {
+	return handleError(func(w http.ResponseWriter, r *http.Request) error {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return errors.WithStack(err)
+		}
+		defer conn.Close()
+
+		// TODO: abstract redis pubsub in cache
+		pubsub := cfg.cache.redis.Subscribe("github-requests")
+		defer pubsub.Close()
+		for msg := range pubsub.Channel() {
+			var r githubRequest
+			if err := json.Unmarshal([]byte(msg.Payload), &r); err != nil {
+				return errors.WithStack(err)
+			}
+			if err := conn.WriteMessage(websocket.TextMessage, []byte(r.String())); err != nil {
+				return errors.WithStack(err)
+			}
+		}
+		return nil
 	})
 }
 
