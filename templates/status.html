@@ -37,11 +37,11 @@ ws.addEventListener('message', function (event) {
         p.appendChild(text);
         p.appendChild(document.createElement('br'));
         requestlog.prepend(p);
-    } else if (payload.channel == 'github-rates') {
-        document.getElementById(payload.body.key).classList.remove('display-none')
-        document.getElementById(payload.body.key + '-remaining').textContent = payload.body.rate.remaining;
-        document.getElementById(payload.body.key + '-limit').textContent = payload.body.rate.limit;
-        document.getElementById(payload.body.key + '-reset').textContent = payload.body.rate.reset;
+    } else if (payload.channel == 'github-core-rate' || payload.channel == 'github-search-rate') {
+        document.getElementById(payload.channel).classList.remove('display-none')
+        document.getElementById(payload.channel + '-remaining').textContent = payload.body.remaining;
+        document.getElementById(payload.channel + '-limit').textContent = payload.body.limit;
+        document.getElementById(payload.channel + '-reset').textContent = payload.body.reset;
     } else {
         console.log(event.data)
     }

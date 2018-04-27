@@ -68,22 +68,22 @@ func statusHandler(cfg *config) http.HandlerFunc {
 		if err != nil {
 			log.Print(err)
 		} else if b != nil {
-			var searchRate githubRate
+			var searchRate github.Rate
 			if err := json.Unmarshal(b, &searchRate); err != nil {
 				log.Print(err)
 			} else {
-				data.SearchRate = &searchRate.Rate
+				data.SearchRate = &searchRate
 			}
 		}
 		b, err = cfg.cache.Get("github-core-rate")
 		if err != nil {
 			log.Print(err)
 		} else if b != nil {
-			var coreRate githubRate
+			var coreRate github.Rate
 			if err := json.Unmarshal(b, &coreRate); err != nil {
 				log.Print(err)
 			} else {
-				data.CoreRate = &coreRate.Rate
+				data.CoreRate = &coreRate
 			}
 		}
 
@@ -118,7 +118,7 @@ func wsHandler(cfg *config) http.HandlerFunc {
 		defer conn.Close()
 
 		// TODO: abstract redis pubsub in cache
-		pubsub := cfg.cache.redis.Subscribe("github-requests", "github-rates")
+		pubsub := cfg.cache.redis.Subscribe("github-requests", "github-core-rate", "github-search-rate")
 		defer pubsub.Close()
 
 		for msg := range pubsub.Channel() {
@@ -134,12 +134,12 @@ func wsHandler(cfg *config) http.HandlerFunc {
 					return errors.WithStack(err)
 				}
 				payload.Body = r.String()
-			case "github-rates":
-				var r githubRate
-				if err := json.Unmarshal([]byte(msg.Payload), &r); err != nil {
+			case "github-core-rate", "github-search-rate":
+				var rate github.Rate
+				if err := json.Unmarshal([]byte(msg.Payload), &rate); err != nil {
 					return errors.WithStack(err)
 				}
-				payload.Body = r
+				payload.Body = rate
 			}
 
 			if err := conn.WriteJSON(payload); err != nil {
