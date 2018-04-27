@@ -58,10 +58,7 @@ func handleError(h handlerFunc) http.HandlerFunc {
 
 func statusHandler(cfg *config) http.HandlerFunc {
 	return handleError(func(w http.ResponseWriter, r *http.Request) error {
-		start := time.Now()
-
 		var data struct {
-			Duration   time.Duration
 			JobCounts  []jobCount
 			SearchRate *github.Rate
 			CoreRate   *github.Rate
@@ -110,7 +107,6 @@ func statusHandler(cfg *config) http.HandlerFunc {
 			data.Requests = append(data.Requests, r)
 		}
 
-		data.Duration = time.Since(start)
 		return errors.WithStack(
 			cfg.template.ExecuteTemplate(w, "status.html", data))
 	})
