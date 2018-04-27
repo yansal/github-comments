@@ -41,7 +41,7 @@ type fetcher struct {
 
 func (f *fetcher) work(ctx context.Context) error {
 	// TODO: abstract db transaction in store
-	tx, err := f.store.BeginTxx(ctx, nil)
+	tx, err := f.store.db.BeginTxx(ctx, nil)
 	if err != nil {
 		return errors.WithStack(err)
 	}

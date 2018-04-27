@@ -10,42 +10,40 @@ import (
 	"github.com/pkg/errors"
 )
 
-type cache struct {
-	redis *redis.Client
-}
+type cache struct{ redis *redis.Client }
 
 func newCache(redis *redis.Client) *cache { return &cache{redis: redis} }
 
-func (cache *cache) LPush(key string, value interface{}) error {
-	return cache.redis.LPush(key, value).Err()
+func (c *cache) LPush(key string, value interface{}) error {
+	return c.redis.LPush(key, value).Err()
 }
 
-func (cache *cache) LTrim(key string, start, stop int64) error {
-	return cache.redis.LTrim(key, start, stop).Err()
+func (c *cache) LTrim(key string, start, stop int64) error {
+	return c.redis.LTrim(key, start, stop).Err()
 }
 
-func (cache *cache) LRange(key string, start, stop int64) ([]string, error) {
-	ss, err := cache.redis.LRange(key, start, stop).Result()
+func (c *cache) LRange(key string, start, stop int64) ([]string, error) {
+	ss, err := c.redis.LRange(key, start, stop).Result()
 	if err == redis.Nil {
 		return nil, nil
 	}
 	return ss, errors.WithStack(err)
 }
 
-func (cache *cache) Publish(channel string, message interface{}) error {
-	return errors.WithStack(cache.redis.Publish(channel, message).Err())
+func (c *cache) Publish(channel string, message interface{}) error {
+	return errors.WithStack(c.redis.Publish(channel, message).Err())
 }
 
-func (cache *cache) Get(key string) ([]byte, error) {
-	b, err := cache.redis.Get(key).Bytes()
+func (c *cache) Get(key string) ([]byte, error) {
+	b, err := c.redis.Get(key).Bytes()
 	if err == redis.Nil {
 		return nil, nil
 	}
 	return b, errors.WithStack(err)
 }
 
-func (cache *cache) Set(key string, value interface{}, expiration time.Duration) error {
-	return cache.redis.Set(key, value, expiration).Err()
+func (c *cache) Set(key string, value interface{}, expiration time.Duration) error {
+	return c.redis.Set(key, value, expiration).Err()
 }
 
 type githubRequest struct {
@@ -82,9 +80,9 @@ func (r githubRequest) String() string {
 	return fmt.Sprintf("ts=%s msg=%q status=%d duration=%s", r.Timestamp.Format(time.RFC3339), message, r.StatusCode, r.Duration)
 }
 
-func (cache *cache) sendToRequestLog(message string, opts github.ListOptions, resp *github.Response, duration time.Duration) error {
+func (c *cache) sendToRequestLog(message string, opts github.ListOptions, resp *github.Response, duration time.Duration) error {
 	now := time.Now()
-	incr, err := cache.redis.Incr("github-requests-id").Result()
+	incr, err := c.redis.Incr("github-requests-id").Result()
 	if err != nil {
 		return err
 	}
@@ -97,13 +95,13 @@ func (cache *cache) sendToRequestLog(message string, opts github.ListOptions, re
 		LastPage:    resp.LastPage,
 		Duration:    duration,
 	}
-	if err := cache.LPush("github-requests", r); err != nil {
+	if err := c.LPush("github-requests", r); err != nil {
 		return err
 	}
-	if err := cache.LTrim("github-requests", 0, 1000); err != nil {
+	if err := c.LTrim("github-requests", 0, 1000); err != nil {
 		return err
 	}
-	return cache.Publish("github-requests", r)
+	return c.Publish("github-requests", r)
 }
 
 type githubRate struct {
@@ -119,11 +117,11 @@ func (r *githubRate) UnmarshalBinary(data []byte) error {
 	return json.Unmarshal(data, r)
 }
 
-func (cache *cache) updateRate(key string, rate github.Rate) error {
+func (c *cache) updateRate(key string, rate github.Rate) error {
 	r := &githubRate{Key: key, Rate: rate}
-	if err := cache.Set(key, r, time.Until(rate.Reset.Time)); err != nil {
+	if err := c.Set(key, r, time.Until(rate.Reset.Time)); err != nil {
 		return err
 
 	}
-	return cache.Publish("github-rates", r)
+	return c.Publish("github-rates", r)
 }
