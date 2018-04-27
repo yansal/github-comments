@@ -48,9 +48,6 @@ func newConfig() *config {
 		panic(err)
 	}
 	poolsize, _ := strconv.Atoi(os.Getenv("REDIS_POOL_SIZE"))
-	if poolsize == 0 {
-		poolsize = 10 // https://elements.heroku.com/addons/heroku-redis
-	}
 	opts.PoolSize = poolsize
 	redis := redis.NewClient(opts)
 	if err := redis.Ping().Err(); err != nil {
