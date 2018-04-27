@@ -43,7 +43,7 @@ func (c *cache) Get(key string) ([]byte, error) {
 }
 
 func (c *cache) Set(key string, value interface{}, expiration time.Duration) error {
-	return c.redis.Set(key, value, expiration).Err()
+	return errors.WithStack(c.redis.Set(key, value, expiration).Err())
 }
 
 type githubRequest struct {
