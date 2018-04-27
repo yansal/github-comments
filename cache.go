@@ -105,3 +105,25 @@ func (cache *cache) sendToRequestLog(message string, opts github.ListOptions, re
 	}
 	return cache.Publish("github-requests", r)
 }
+
+type githubRate struct {
+	Key  string      `json:"key"`
+	Rate github.Rate `json:"rate"`
+}
+
+func (r *githubRate) MarshalBinary() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+func (r *githubRate) UnmarshalBinary(data []byte) error {
+	return json.Unmarshal(data, r)
+}
+
+func (cache *cache) updateRate(key string, rate github.Rate) error {
+	r := &githubRate{Key: key, Rate: rate}
+	if err := cache.Set(key, r, time.Until(rate.Reset.Time)); err != nil {
+		return err
+
+	}
+	return cache.Publish("github-rates", r)
+}

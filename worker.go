@@ -142,8 +142,7 @@ func (w *worker) searchIssues(ctx context.Context, user string, page int) error 
 	result, resp, err := w.githubClient.Search.Issues(ctx, query, opts)
 	duration := time.Since(start)
 	if resp != nil {
-		b, _ := json.Marshal(resp.Rate)
-		if err := w.cache.Set("github-search-rate", b, time.Until(resp.Reset.Time)); err != nil {
+		if err := w.cache.updateRate("github-search-rate", resp.Rate); err != nil {
 			log.Print(err)
 		}
 		if err := w.cache.sendToRequestLog(fmt.Sprintf("search issues commented by %s", user), opts.ListOptions, resp, duration); err != nil {
@@ -184,8 +183,7 @@ func (w *worker) listIssues(ctx context.Context, owner, repo string, page int) e
 	issues, resp, err := w.githubClient.Issues.ListByRepo(ctx, owner, repo, opts)
 	duration := time.Since(start)
 	if resp != nil {
-		b, _ := json.Marshal(resp.Rate)
-		if err := w.cache.Set("github-core-rate", b, time.Until(resp.Reset.Time)); err != nil {
+		if err := w.cache.updateRate("github-core-rate", resp.Rate); err != nil {
 			log.Print(err)
 		}
 		if err := w.cache.sendToRequestLog(fmt.Sprintf("list %s/%s issues", owner, repo), opts.ListOptions, resp, duration); err != nil {
@@ -241,8 +239,7 @@ func (w *worker) listComments(ctx context.Context, issueURL string, page int) er
 	comments, resp, err := w.githubClient.Issues.ListComments(ctx, owner, repo, number, opts)
 	duration := time.Since(start)
 	if resp != nil {
-		b, _ := json.Marshal(resp.Rate)
-		if err := w.cache.Set("github-core-rate", b, time.Until(resp.Reset.Time)); err != nil {
+		if err := w.cache.updateRate("github-core-rate", resp.Rate); err != nil {
 			log.Print(err)
 		}
 		if err := w.cache.sendToRequestLog(fmt.Sprintf("list %s/%s#%d comments", owner, repo, number), opts.ListOptions, resp, duration); err != nil {

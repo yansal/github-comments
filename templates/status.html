@@ -6,12 +6,11 @@
 {{end}}
 
 <h2>GitHub stats</h2>
-{{with .CoreRate}}
-<div>Core rate limit: {{.Remaining}}/{{.Limit}}, reset in {{until .Reset.Time}}</div>
-{{end}}
-{{with .SearchRate}}
-<div>Search rate limit: {{.Remaining}}/{{.Limit}}, reset in {{until .Reset.Time}}</div>
-{{end}}
+<h3>Rate limits</h3>
+
+<div id='github-core-rate' {{if not .CoreRate}}class='display-none'{{end}}>Core rate limit: <span id="github-core-rate-remaining">{{if .CoreRate}}{{.CoreRate.Remaining}}{{end}}</span>/<span id="github-core-rate-limit">{{if .CoreRate}}{{.CoreRate.Limit}}{{end}}</span>; reset at <span id="github-core-rate-reset">{{if .CoreRate}}{{.CoreRate.Reset.Time}}{{end}}</span></div>
+
+<div id='github-search-rate' {{if not .SearchRate}}class='display-none'{{end}}>Search rate limit: <span id="github-search-rate-remaining">{{if .SearchRate}}{{.SearchRate.Remaining}}{{end}}</span>/<span id="github-search-rate-limit">{{if .SearchRate}}{{.SearchRate.Limit}}{{end}}</span>; reset at <span id="github-search-rate-reset">{{if .SearchRate}}{{.SearchRate.Reset.Time}}{{end}}</span></div>
 
 <h3>Request log</h3>
 <div id='request-log'>
@@ -30,11 +29,22 @@ if (location.protocol != 'https:') {
 const ws = new WebSocket(proto + '//' + location.host + '/_ws');
 
 ws.addEventListener('message', function (event) {
-    var p = document.createElement('code');
-    var text = document.createTextNode(event.data);
-    p.appendChild(text);
-    p.appendChild(document.createElement('br'));
-    requestlog.prepend(p);
+    var payload = JSON.parse(event.data);
+
+    if (payload.channel == 'github-requests') {
+        var p = document.createElement('code');
+        var text = document.createTextNode(payload.body);
+        p.appendChild(text);
+        p.appendChild(document.createElement('br'));
+        requestlog.prepend(p);
+    } else if (payload.channel == 'github-rates') {
+        document.getElementById(payload.body.key).classList.remove('display-none')
+        document.getElementById(payload.body.key + '-remaining').textContent = payload.body.rate.remaining;
+        document.getElementById(payload.body.key + '-limit').textContent = payload.body.rate.limit;
+        document.getElementById(payload.body.key + '-reset').textContent = payload.body.rate.reset;
+    } else {
+        console.log(event.data)
+    }
 });
 </script>
 {{template "foot" .}}
