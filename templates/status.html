@@ -27,7 +27,7 @@ var proto = 'wss:'
 if (location.protocol != 'https:') {
     proto = 'ws:'
 }
-const ws = new WebSocket(proto + '//' + location.hostname + '/_ws');
+const ws = new WebSocket(proto + '//' + location.host + '/_ws');
 
 ws.addEventListener('message', function (event) {
     var p = document.createElement('code');
