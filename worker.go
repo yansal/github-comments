@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/google/go-github/github"
-	"github.com/lib/pq"
 	"github.com/pkg/errors"
 	"golang.org/x/sync/errgroup"
 )
@@ -20,7 +19,7 @@ func newWorker(ctx context.Context, cfg *config) *worker {
 	return &worker{
 		ctx:          ctx,
 		store:        cfg.store,
-		listener:     cfg.listener,
+		databaseURL:  cfg.databaseURL,
 		cache:        cfg.cache,
 		githubClient: cfg.githubClient,
 	}
@@ -29,23 +28,24 @@ func newWorker(ctx context.Context, cfg *config) *worker {
 type worker struct {
 	ctx          context.Context
 	store        *store
-	listener     *pq.Listener
+	databaseURL  string
 	cache        *cache
 	githubClient *github.Client
 }
 
 func (w *worker) run() error {
-	if err := w.listener.Listen("jobs"); err != nil {
-		return err
-	}
 
 	g, ctx := errgroup.WithContext(w.ctx)
 	for i := 0; i < 2; i++ {
 		g.Go(func() error {
+			l, err := newListener(w.databaseURL, "jobs")
+			if err != nil {
+				return err
+			}
 			for {
 				w.workLoop(ctx)
 				select {
-				case <-w.listener.Notify:
+				case <-l.Notify:
 				case <-ctx.Done():
 					return ctx.Err()
 				}

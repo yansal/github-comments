@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"log"
 	"os"
 	"strconv"
 	"text/template"
@@ -11,7 +10,6 @@ import (
 	"github.com/go-redis/redis"
 	"github.com/google/go-github/github"
 	"github.com/jmoiron/sqlx"
-	"github.com/lib/pq"
 	"github.com/pkg/errors"
 	"golang.org/x/oauth2"
 	blackfriday "gopkg.in/russross/blackfriday.v2"
@@ -20,7 +18,7 @@ import (
 type config struct {
 	store        *store
 	cache        *cache
-	listener     *pq.Listener
+	databaseURL  string
 	port         string
 	githubClient *github.Client
 	template     *template.Template
@@ -33,11 +31,8 @@ func newConfig() *config {
 	if databaseURL == "" {
 		databaseURL = "host=/tmp"
 	}
-	cfg.store = newStore(sqlx.MustConnect("postgres", databaseURL))
-
-	cfg.listener = pq.NewListener(databaseURL, time.Second, time.Second, func(event pq.ListenerEventType, err error) {
-		log.Println("listener callback:", event, err)
-	})
+	cfg.databaseURL = databaseURL
+	cfg.store = newStore(sqlx.MustConnect("postgres", cfg.databaseURL))
 
 	redisURL := os.Getenv("REDIS_URL")
 	if redisURL == "" {
