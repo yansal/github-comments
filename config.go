@@ -46,6 +46,7 @@ func newConfig() *config {
 	if err != nil {
 		panic(err)
 	}
+	opts.PoolSize = 15 // https://elements.heroku.com/addons/heroku-redis
 	redis := redis.NewClient(opts)
 	if err := redis.Ping().Err(); err != nil {
 		panic(err)
