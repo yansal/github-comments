@@ -79,5 +79,5 @@ func (r githubRequest) String() string {
 		}
 		message = fmt.Sprintf("%s (%d/%d)", message, page, lastPage)
 	}
-	return fmt.Sprintf("ts=%s msg=%q status=%d duration=%s", r.Timestamp.Format(time.RFC3339), r.Message, r.StatusCode, r.Duration)
+	return fmt.Sprintf("ts=%s msg=%q status=%d duration=%s", r.Timestamp.Format(time.RFC3339), message, r.StatusCode, r.Duration)
 }
