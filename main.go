@@ -30,10 +30,12 @@ func main() {
 	})
 
 	// HTTP server
-	g.Go(newServer(ctx, cfg).run)
+	g.Go(server(ctx, cfg))
 
-	// Worker
-	g.Go(newWorker(ctx, cfg).run)
+	// GitHub fetchers
+	for i := 0; i < 2; i++ {
+		g.Go(listener(ctx, cfg, fetch, "fetcher"))
+	}
 
 	if err := g.Wait(); err != nil {
 		log.Fatalf("%+v", err)

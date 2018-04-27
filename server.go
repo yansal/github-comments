@@ -13,35 +13,27 @@ import (
 	"github.com/pkg/errors"
 )
 
-func newServer(ctx context.Context, cfg *config) *server {
-	mux := http.NewServeMux()
-	mux.Handle("/favicon.ico", http.NotFoundHandler())
-	mux.Handle("/_status", statusHandler(cfg))
-	mux.Handle("/_ws", wsHandler(cfg))
-	mux.Handle("/", rootHandler(cfg))
+func server(ctx context.Context, cfg *config) func() error {
+	return func() error {
+		mux := http.NewServeMux()
+		mux.Handle("/favicon.ico", http.NotFoundHandler())
+		mux.Handle("/_status", statusHandler(cfg))
+		mux.Handle("/_ws", wsHandler(cfg))
+		mux.Handle("/", rootHandler(cfg))
 
-	return &server{
-		ctx: ctx,
-		server: http.Server{
+		s := http.Server{
 			Addr:    ":" + cfg.port,
 			Handler: mux,
-		},
-	}
-}
+		}
 
-type server struct {
-	ctx    context.Context
-	server http.Server
-}
-
-func (s *server) run() error {
-	cerr := make(chan error)
-	go func() { cerr <- s.server.ListenAndServe() }()
-	select {
-	case err := <-cerr:
-		return err
-	case <-s.ctx.Done():
-		return s.server.Shutdown(context.Background())
+		cerr := make(chan error)
+		go func() { cerr <- s.ListenAndServe() }()
+		select {
+		case err := <-cerr:
+			return err
+		case <-ctx.Done():
+			return s.Shutdown(context.Background())
+		}
 	}
 }
 
@@ -59,18 +51,18 @@ func handleError(h handlerFunc) http.HandlerFunc {
 func statusHandler(cfg *config) http.HandlerFunc {
 	return handleError(func(w http.ResponseWriter, r *http.Request) error {
 		var data struct {
-			JobCounts  []jobCount
+			Counts     []fetchQueueCount
 			SearchRate *github.Rate
 			CoreRate   *github.Rate
 			Requests   []githubRequest
 		}
 
 		ctx := r.Context()
-		jobCounts, err := cfg.store.countJobs(ctx)
+		counts, err := cfg.store.countFetchQueue(ctx)
 		if err != nil {
 			return err
 		}
-		data.JobCounts = jobCounts
+		data.Counts = counts
 
 		b, err := cfg.cache.Get("github-search-rate")
 		if err != nil {
@@ -177,7 +169,7 @@ func rootHandler(cfg *config) http.HandlerFunc {
 				return err
 			}
 
-			if err := cfg.store.insertJobRepo(ctx, jobRepo{Owner: owner, Name: repo}); err != nil {
+			if err := cfg.store.queueFetch(ctx, repoFetchItem{Owner: owner, Name: repo}); err != nil {
 				return err
 			}
 		case len(split) >= 2 && split[1] != "":
@@ -186,7 +178,7 @@ func rootHandler(cfg *config) http.HandlerFunc {
 			if err != nil {
 				return err
 			}
-			if err := cfg.store.insertJobUser(ctx, jobUser{Login: user}); err != nil {
+			if err := cfg.store.queueFetch(ctx, userFetchItem{Login: user}); err != nil {
 				return err
 			}
 		default:

@@ -56,16 +56,21 @@ func newConfig() *config {
 	}
 	cfg.port = port
 
-	cfg.githubClient = github.NewClient(
-		oauth2.NewClient(
-			context.Background(),
-			oauth2.StaticTokenSource(
-				&oauth2.Token{
-					AccessToken: os.Getenv("GITHUB_TOKEN"),
-				},
+	githubToken := os.Getenv("GITHUB_TOKEN")
+	if githubToken != "" {
+		cfg.githubClient = github.NewClient(
+			oauth2.NewClient(
+				context.Background(),
+				oauth2.StaticTokenSource(
+					&oauth2.Token{
+						AccessToken: githubToken,
+					},
+				),
 			),
-		),
-	)
+		)
+	} else {
+		cfg.githubClient = github.NewClient(nil)
+	}
 
 	cfg.template = template.Must(template.New("").Funcs(template.FuncMap{
 		"markdown": func(in string) string {

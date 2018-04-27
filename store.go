@@ -81,17 +81,6 @@ func (s *store) countCommentsForIssue(ctx context.Context, issue *github.Issue) 
 	return count, errors.WithStack(err)
 }
 
-type jobCount struct {
-	Type  string
-	Count int
-}
-
-func (s *store) countJobs(ctx context.Context) ([]jobCount, error) {
-	var jobCounts []jobCount
-	err := s.Select(&jobCounts, `select type, count(*) from jobs group by type order by type`)
-	return jobCounts, errors.WithStack(err)
-}
-
 func unmarshalComments(b [][]byte) ([]github.IssueComment, error) {
 	comments := make([]github.IssueComment, len(b))
 	for i := range b {
@@ -138,35 +127,65 @@ func (s *store) insertIssue(ctx context.Context, issue *github.Issue) error {
 	return errors.Wrapf(err, "couldn't insert issue %s", issue.GetURL())
 }
 
-type jobRepo struct {
-	Owner, Name string
-	Page        int
+type fetchItem interface {
+	Payload() []byte
+	Type() string
 }
 
-func (s *store) insertJobRepo(ctx context.Context, repo jobRepo) error {
-	b, _ := json.Marshal(repo)
-	_, err := s.Exec(`insert into jobs(type, payload) values($1, $2) on conflict do nothing`, "repo", b)
-	return errors.WithStack(err)
-}
-
-type jobIssue struct {
+type issueFetchItem struct {
 	URL  string
 	Page int
 }
 
-func (s *store) insertJobIssue(ctx context.Context, issue jobIssue) error {
-	b, _ := json.Marshal(issue)
-	_, err := s.Exec(`insert into jobs(type, payload) values($1, $2) on conflict do nothing`, "issue", b)
-	return errors.WithStack(err)
+func (i issueFetchItem) Payload() []byte {
+	b, _ := json.Marshal(i)
+	return b
 }
 
-type jobUser struct {
+func (issueFetchItem) Type() string {
+	return "issue"
+}
+
+type repoFetchItem struct {
+	Owner, Name string
+	Page        int
+}
+
+func (r repoFetchItem) Payload() []byte {
+	b, _ := json.Marshal(r)
+	return b
+}
+
+func (repoFetchItem) Type() string {
+	return "repo"
+}
+
+type userFetchItem struct {
 	Login string
 	Page  int
 }
 
-func (s *store) insertJobUser(ctx context.Context, user jobUser) error {
-	b, _ := json.Marshal(user)
-	_, err := s.Exec(`insert into jobs(type, payload) values($1, $2) on conflict do nothing`, "user", b)
+func (u userFetchItem) Payload() []byte {
+	b, _ := json.Marshal(u)
+	return b
+}
+
+func (userFetchItem) Type() string {
+	return "user"
+}
+
+func (s *store) queueFetch(ctx context.Context, p fetchItem) error {
+	_, err := s.Exec(`insert into fetch_queue(type, payload) values($1, $2) on conflict do nothing`, p.Type(), p.Payload())
 	return errors.WithStack(err)
+}
+
+type fetchQueueCount struct {
+	Type  string
+	Count int
+}
+
+func (s *store) countFetchQueue(ctx context.Context) ([]fetchQueueCount, error) {
+	var counts []fetchQueueCount
+	err := s.Select(&counts, `select type, count(*) from fetch_queue group by type order by type`)
+	return counts, errors.WithStack(err)
 }

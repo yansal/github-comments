@@ -1,7 +1,7 @@
 {{template "head" .}}
 
-<h2>Number of queued jobs</h2>
-{{range .JobCounts}}
+<h2>Number of queued items to fetch:</h2>
+{{range .Counts}}
 <div>{{.Type}}: {{.Count}}</div>
 {{end}}
 
