@@ -10,7 +10,6 @@ import (
 	"github.com/go-redis/redis"
 	"github.com/google/go-github/github"
 	"github.com/jmoiron/sqlx"
-	"github.com/pkg/errors"
 	"golang.org/x/oauth2"
 	blackfriday "gopkg.in/russross/blackfriday.v2"
 )
@@ -81,14 +80,6 @@ func newConfig() *config {
 		},
 		"until": func(t time.Time) string {
 			return time.Until(t).Truncate(time.Second).String()
-		},
-		"repo": func(comment *github.IssueComment) (string, error) {
-			url := comment.GetURL()
-			match := commentURLRegexp.FindStringSubmatch(url)
-			if len(match) < 4 {
-				return "", errors.Errorf("couldn't match %s", url)
-			}
-			return match[1] + "/" + match[2], nil
 		},
 	}).ParseGlob("templates/*.html"))
 

@@ -154,7 +154,7 @@ func rootHandler(cfg *config) http.HandlerFunc {
 	return handleError(func(w http.ResponseWriter, r *http.Request) error {
 		start := time.Now()
 		var (
-			comments []github.IssueComment
+			comments []comment
 			err      error
 		)
 
@@ -190,7 +190,7 @@ func rootHandler(cfg *config) http.HandlerFunc {
 
 		data := struct {
 			Duration time.Duration
-			Comments []github.IssueComment
+			Comments []comment
 		}{Comments: comments, Duration: time.Since(start)}
 
 		return errors.WithStack(

@@ -4,7 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"fmt"
+	"strings"
 
 	"github.com/google/go-github/github"
 	"github.com/jmoiron/sqlx"
@@ -17,42 +17,80 @@ func newStore(db *sqlx.DB) *store {
 
 type store struct{ db *sqlx.DB }
 
-func (s *store) getComments(ctx context.Context) ([]github.IssueComment, error) {
-	var dest [][]byte
+type comment struct {
+	Comment github.IssueComment
+	Repo    string
+}
+
+func (s *store) getComments(ctx context.Context) ([]comment, error) {
+	var dest []struct {
+		J    []byte
+		Repo string
+	}
 	if err := s.db.Select(&dest,
-		`select j from comments
+		`select j, repo from comments
 		where (j#>>'{reactions,total_count}')::int > 0
 		order by (j#>>'{reactions,total_count}')::int desc limit 100`,
 	); err != nil {
 		return nil, errors.WithStack(err)
 	}
-	return unmarshalComments(dest)
+
+	comments := make([]comment, len(dest))
+	for i := range dest {
+		if err := json.Unmarshal(dest[i].J, &comments[i].Comment); err != nil {
+			return nil, errors.WithStack(err)
+		}
+		comments[i].Repo = dest[i].Repo
+	}
+	return comments, nil
 }
 
-func (s *store) getCommentsForUser(ctx context.Context, user string) ([]github.IssueComment, error) {
-	var dest [][]byte
+func (s *store) getCommentsForUser(ctx context.Context, user string) ([]comment, error) {
+	var dest []struct {
+		J    []byte
+		Repo string
+	}
 	if err := s.db.Select(&dest,
-		`select j from comments
+		`select j, repo from comments
 		where (j#>>'{reactions,total_count}')::int > 0 and j#>>'{user,login}' = $1
 		order by (j#>>'{reactions,total_count}')::int desc limit 100`,
 		user,
 	); err != nil {
 		return nil, errors.WithStack(err)
 	}
-	return unmarshalComments(dest)
+
+	comments := make([]comment, len(dest))
+	for i := range dest {
+		if err := json.Unmarshal(dest[i].J, &comments[i].Comment); err != nil {
+			return nil, errors.WithStack(err)
+		}
+		comments[i].Repo = dest[i].Repo
+	}
+	return comments, nil
 }
 
-func (s *store) getCommentsForRepo(ctx context.Context, owner, repo string) ([]github.IssueComment, error) {
-	var dest [][]byte
+func (s *store) getCommentsForRepo(ctx context.Context, owner, repo string) ([]comment, error) {
+	var dest []struct {
+		J    []byte
+		Repo string
+	}
 	if err := s.db.Select(&dest,
-		`select j from comments
-		where (j#>>'{reactions,total_count}')::int > 0 and j->>'html_url' like $1
+		`select j, repo from comments
+		where (j#>>'{reactions,total_count}')::int > 0 and repo = $1
 		order by (j#>>'{reactions,total_count}')::int desc limit 100`,
-		fmt.Sprintf("https://github.com/%s/%s/%%", owner, repo),
+		strings.Join([]string{owner, repo}, "/"),
 	); err != nil {
 		return nil, errors.WithStack(err)
 	}
-	return unmarshalComments(dest)
+
+	comments := make([]comment, len(dest))
+	for i := range dest {
+		if err := json.Unmarshal(dest[i].J, &comments[i].Comment); err != nil {
+			return nil, errors.WithStack(err)
+		}
+		comments[i].Repo = dest[i].Repo
+	}
+	return comments, nil
 }
 
 func (s *store) issueIsUpToDate(ctx context.Context, issue *github.Issue) (bool, error) {
@@ -81,16 +119,6 @@ func (s *store) countCommentsForIssue(ctx context.Context, issue *github.Issue) 
 	return count, errors.WithStack(err)
 }
 
-func unmarshalComments(b [][]byte) ([]github.IssueComment, error) {
-	comments := make([]github.IssueComment, len(b))
-	for i := range b {
-		if err := json.Unmarshal(b[i], &comments[i]); err != nil {
-			return nil, errors.WithStack(err)
-		}
-	}
-	return comments, nil
-}
-
 func (s *store) getIssue(ctx context.Context, id int64) (*github.Issue, error) {
 	var dest []byte
 	if err := s.db.Get(&dest, `select j from issues where (j->>'id')::int = $1`, id); err == sql.ErrNoRows {
@@ -103,15 +131,15 @@ func (s *store) getIssue(ctx context.Context, id int64) (*github.Issue, error) {
 	return &issue, errors.WithStack(err)
 }
 
-func (s *store) insertComment(ctx context.Context, comment *github.IssueComment) error {
+func (s *store) insertComment(ctx context.Context, comment *github.IssueComment, repo string) error {
 	j, err := json.Marshal(comment)
 	if err != nil {
 		return errors.WithStack(err)
 	}
-	_, err = s.db.Exec(`insert into comments values($1)
+	_, err = s.db.Exec(`insert into comments values($1, $2)
 	on conflict (((j->>'id')::int)) do update
 	set j = excluded.j
-	where (comments.j->>'updated_at')::timestamp < (excluded.j->>'updated_at')::timestamp`, j)
+	where (comments.j->>'updated_at')::timestamp < (excluded.j->>'updated_at')::timestamp`, j, repo)
 	return errors.Wrapf(err, "couldn't insert comment %s", comment.GetURL())
 }
 

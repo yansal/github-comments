@@ -8,6 +8,7 @@ import (
 	"log"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/go-github/github"
@@ -178,7 +179,6 @@ func (f *fetcher) listIssues(ctx context.Context, owner, repo string, page int) 
 		if err := f.store.queueFetch(ctx, issueFetchItem{URL: issue.GetURL()}); err != nil {
 			return err
 		}
-
 	}
 
 	if resp.NextPage > opts.ListOptions.Page {
@@ -187,10 +187,7 @@ func (f *fetcher) listIssues(ctx context.Context, owner, repo string, page int) 
 	return nil
 }
 
-var (
-	issueURLRegexp   = regexp.MustCompile(`^https://api\.github\.com/repos/([a-zA-Z\d\.-]+)/([a-zA-Z\d\._-]+)/issues/(\d+)$`)
-	commentURLRegexp = regexp.MustCompile(`^https://api\.github\.com/repos/([a-zA-Z\d\.-]+)/([a-zA-Z\d\._-]+)/issues/comments/(\d+)$`)
-)
+var issueURLRegexp = regexp.MustCompile(`^https://api\.github\.com/repos/([\w-]+)/([\w\.-]+)/issues/(\d+)$`)
 
 func (f *fetcher) listComments(ctx context.Context, issueURL string, page int) error {
 	match := issueURLRegexp.FindStringSubmatch(issueURL)
@@ -221,7 +218,7 @@ func (f *fetcher) listComments(ctx context.Context, issueURL string, page int) e
 	}
 
 	for i := range comments {
-		if err := f.store.insertComment(ctx, comments[i]); err != nil {
+		if err := f.store.insertComment(ctx, comments[i], strings.Join([]string{owner, repo}, "/")); err != nil {
 			return err
 		}
 	}

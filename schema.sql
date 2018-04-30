@@ -3,11 +3,12 @@ begin;
 create table issues(j jsonb not null, check(j?'id'));
 create unique index on issues(((j->>'id')::int));
 
-create table comments(j jsonb not null, check(j?'id'));
+create table comments(j jsonb not null, repo text not null, check(j?'id'));
 create unique index on comments(((j->>'id')::int));
 create index on comments (((j#>>'{reactions,total_count}')::int));
 create index on comments ((j#>>'{user,login}'));
 create index on comments ((j->>'issue_url'));
+create index on comments (repo);
 
 create type fetch_type as enum ('issue', 'repo', 'user');
 create table fetch_queue(
