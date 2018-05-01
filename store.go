@@ -27,7 +27,7 @@ func (s *store) getComments(ctx context.Context) ([]comment, error) {
 		J    []byte
 		Repo string
 	}
-	if err := s.db.Select(&dest,
+	if err := s.db.SelectContext(ctx, &dest,
 		`select j, repo from comments
 		where (j#>>'{reactions,total_count}')::int > 0
 		order by (j#>>'{reactions,total_count}')::int desc limit 100`,
@@ -50,7 +50,7 @@ func (s *store) getCommentsForUser(ctx context.Context, user string) ([]comment,
 		J    []byte
 		Repo string
 	}
-	if err := s.db.Select(&dest,
+	if err := s.db.SelectContext(ctx, &dest,
 		`select j, repo from comments
 		where (j#>>'{reactions,total_count}')::int > 0 and j#>>'{user,login}' = $1
 		order by (j#>>'{reactions,total_count}')::int desc limit 100`,
@@ -74,7 +74,7 @@ func (s *store) getCommentsForRepo(ctx context.Context, owner, repo string) ([]c
 		J    []byte
 		Repo string
 	}
-	if err := s.db.Select(&dest,
+	if err := s.db.SelectContext(ctx, &dest,
 		`select j, repo from comments
 		where (j#>>'{reactions,total_count}')::int > 0 and repo = $1
 		order by (j#>>'{reactions,total_count}')::int desc limit 100`,
@@ -112,7 +112,7 @@ func (s *store) issueIsUpToDate(ctx context.Context, issue *github.Issue) (bool,
 
 func (s *store) countCommentsForIssue(ctx context.Context, issue *github.Issue) (int, error) {
 	var count int
-	err := s.db.Get(&count,
+	err := s.db.GetContext(ctx, &count,
 		`select count(*) from comments where j->>'issue_url' = $1`,
 		issue.GetURL(),
 	)
@@ -121,7 +121,7 @@ func (s *store) countCommentsForIssue(ctx context.Context, issue *github.Issue) 
 
 func (s *store) getIssue(ctx context.Context, id int64) (*github.Issue, error) {
 	var dest []byte
-	if err := s.db.Get(&dest, `select j from issues where (j->>'id')::int = $1`, id); err == sql.ErrNoRows {
+	if err := s.db.GetContext(ctx, &dest, `select j from issues where (j->>'id')::int = $1`, id); err == sql.ErrNoRows {
 		return nil, nil
 	} else if err != nil {
 		return nil, errors.WithStack(err)
@@ -136,7 +136,7 @@ func (s *store) insertComment(ctx context.Context, comment *github.IssueComment,
 	if err != nil {
 		return errors.WithStack(err)
 	}
-	_, err = s.db.Exec(`insert into comments values($1, $2)
+	_, err = s.db.ExecContext(ctx, `insert into comments values($1, $2)
 	on conflict (((j->>'id')::int)) do update
 	set j = excluded.j
 	where (comments.j->>'updated_at')::timestamp < (excluded.j->>'updated_at')::timestamp`, j, repo)
@@ -148,7 +148,7 @@ func (s *store) insertIssue(ctx context.Context, issue *github.Issue) error {
 	if err != nil {
 		return errors.WithStack(err)
 	}
-	_, err = s.db.Exec(`insert into issues values($1)
+	_, err = s.db.ExecContext(ctx, `insert into issues values($1)
 	on conflict (((j->>'id')::int)) do update
 	set j = excluded.j
 	where (issues.j->>'updated_at')::timestamp < (excluded.j->>'updated_at')::timestamp`, j)
@@ -203,7 +203,7 @@ func (userFetchItem) Type() string {
 }
 
 func (s *store) queueFetch(ctx context.Context, p fetchItem) error {
-	_, err := s.db.Exec(`insert into fetch_queue(type, payload) values($1, $2) on conflict do nothing`, p.Type(), p.Payload())
+	_, err := s.db.ExecContext(ctx, `insert into fetch_queue(type, payload) values($1, $2) on conflict do nothing`, p.Type(), p.Payload())
 	return errors.WithStack(err)
 }
 
@@ -214,6 +214,6 @@ type fetchQueueCount struct {
 
 func (s *store) countFetchQueue(ctx context.Context) ([]fetchQueueCount, error) {
 	var counts []fetchQueueCount
-	err := s.db.Select(&counts, `select type, count(*) from fetch_queue group by type order by type`)
+	err := s.db.SelectContext(ctx, &counts, `select type, count(*) from fetch_queue group by type order by type`)
 	return counts, errors.WithStack(err)
 }
