@@ -33,8 +33,7 @@ ws.addEventListener('message', function (event) {
 
     if (msg.channel == 'github-requests') {
         var p = document.createElement('code');
-        var text = document.createTextNode(msg.payload);
-        p.appendChild(text);
+        p.appendChild(document.createTextNode(msg.payload));
         p.appendChild(document.createElement('br'));
         requestlog.prepend(p);
     } else if (msg.pattern == 'github-*-rate') {
