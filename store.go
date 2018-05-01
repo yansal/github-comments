@@ -161,58 +161,33 @@ func (s *store) insertIssue(ctx context.Context, issue *github.Issue) error {
 	return errors.Wrapf(err, "couldn't insert issue %s", issue.GetURL())
 }
 
-type fetchItem interface {
-	Payload() []byte
-	Type() string
+type fetchItem struct {
+	ID      int64
+	Payload []byte
+	Type    string
+	Retry   int
 }
 
-type issueFetchItem struct {
+type issuePayload struct {
 	URL  string
 	Page int
 }
 
-func (i issueFetchItem) Payload() []byte {
-	b, _ := json.Marshal(i)
-	return b
-}
-
-func (issueFetchItem) Type() string {
-	return "issue"
-}
-
-type repoFetchItem struct {
+type repoPayload struct {
 	Owner, Name string
 	Page        int
 }
 
-func (r repoFetchItem) Payload() []byte {
-	b, _ := json.Marshal(r)
-	return b
-}
-
-func (repoFetchItem) Type() string {
-	return "repo"
-}
-
-type userFetchItem struct {
+type userPayload struct {
 	Login string
 	Page  int
 }
 
-func (u userFetchItem) Payload() []byte {
-	b, _ := json.Marshal(u)
-	return b
-}
-
-func (userFetchItem) Type() string {
-	return "user"
-}
-
-func (s *store) addFetchItemToQueue(ctx context.Context, i fetchItem) error {
+func (s *store) addFetchItemToQueue(ctx context.Context, item fetchItem) error {
 	// TODO: use a db transaction so that we don't insert if we have an error with the cache?
-	_, err := s.db.ExecContext(ctx, `insert into fetch_queue(type, payload) values($1, $2) on conflict do nothing`, i.Type(), i.Payload())
+	_, err := s.db.ExecContext(ctx, `insert into fetch_queue(type, payload, retry) values($1, $2, $3) on conflict do nothing`, item.Type, item.Payload, item.Retry)
 	if err != nil {
 		return errors.WithStack(err)
 	}
-	return s.cache.updateCount(i.Type(), 1)
+	return s.cache.updateCount(item.Type, 1)
 }
