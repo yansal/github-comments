@@ -15,18 +15,20 @@ type cache struct{ redis *redis.Client }
 func newCache(redis *redis.Client) *cache { return &cache{redis: redis} }
 
 func (c *cache) Incr(key string) (int64, error) {
-	return c.redis.Incr(key).Result()
+	val, err := c.redis.Incr(key).Result()
+	return val, errors.WithStack(err)
 }
 func (c *cache) IncrBy(key string, value int64) (int64, error) {
-	return c.redis.IncrBy(key, value).Result()
+	val, err := c.redis.IncrBy(key, value).Result()
+	return val, errors.WithStack(err)
 }
 
 func (c *cache) LPush(key string, value interface{}) error {
-	return c.redis.LPush(key, value).Err()
+	return errors.WithStack(c.redis.LPush(key, value).Err())
 }
 
 func (c *cache) LTrim(key string, start, stop int64) error {
-	return c.redis.LTrim(key, start, stop).Err()
+	return errors.WithStack(c.redis.LTrim(key, start, stop).Err())
 }
 
 func (c *cache) LRange(key string, start, stop int64) ([]string, error) {
@@ -133,7 +135,7 @@ func (c *cache) updateCount(fetchItemType string, incr int64) error {
 	key := "count-" + fetchItemType
 	count, err := c.IncrBy(key, incr)
 	if err != nil {
-		return errors.WithStack(err)
+		return err
 	}
 	return c.Publish(key, count)
 }
