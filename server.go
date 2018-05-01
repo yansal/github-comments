@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -51,20 +52,33 @@ func handleError(h handlerFunc) http.HandlerFunc {
 func statusHandler(cfg *config) http.HandlerFunc {
 	return handleError(func(w http.ResponseWriter, r *http.Request) error {
 		var data struct {
-			Counts     []fetchQueueCount
-			SearchRate *github.Rate
-			CoreRate   *github.Rate
-			Requests   []githubRequest
+			IssueCount, RepoCount, UserCount int
+			CoreRate, SearchRate             *github.Rate
+			Requests                         []githubRequest
 		}
 
-		ctx := r.Context()
-		counts, err := cfg.store.countFetchQueue(ctx)
+		b, err := cfg.cache.Get("count-issue")
 		if err != nil {
-			return err
+			log.Print(err)
+		} else if b != nil {
+			data.IssueCount, _ = strconv.Atoi(string(b))
 		}
-		data.Counts = counts
 
-		b, err := cfg.cache.Get("github-search-rate")
+		b, err = cfg.cache.Get("count-repo")
+		if err != nil {
+			log.Print(err)
+		} else if b != nil {
+			data.RepoCount, _ = strconv.Atoi(string(b))
+		}
+
+		b, err = cfg.cache.Get("count-user")
+		if err != nil {
+			log.Print(err)
+		} else if b != nil {
+			data.UserCount, _ = strconv.Atoi(string(b))
+		}
+
+		b, err = cfg.cache.Get("github-search-rate")
 		if err != nil {
 			log.Print(err)
 		} else if b != nil {
@@ -118,31 +132,34 @@ func wsHandler(cfg *config) http.HandlerFunc {
 		defer conn.Close()
 
 		// TODO: abstract redis pubsub in cache
-		pubsub := cfg.cache.redis.Subscribe("github-requests", "github-core-rate", "github-search-rate")
+		pubsub := cfg.cache.redis.PSubscribe("github-requests", "github-*-rate", "count-*")
 		defer pubsub.Close()
 
 		for msg := range pubsub.Channel() {
-			payload := struct {
+			wsMsg := struct {
 				Channel string      `json:"channel"`
-				Body    interface{} `json:"body"`
-			}{Channel: msg.Channel}
+				Pattern string      `json:"pattern"`
+				Payload interface{} `json:"payload"`
+			}{Channel: msg.Channel, Pattern: msg.Pattern}
 
-			switch msg.Channel {
+			switch msg.Pattern {
 			case "github-requests":
 				var r githubRequest
 				if err := json.Unmarshal([]byte(msg.Payload), &r); err != nil {
 					return errors.WithStack(err)
 				}
-				payload.Body = r.String()
-			case "github-core-rate", "github-search-rate":
+				wsMsg.Payload = r.String()
+			case "github-*-rate":
 				var rate github.Rate
 				if err := json.Unmarshal([]byte(msg.Payload), &rate); err != nil {
 					return errors.WithStack(err)
 				}
-				payload.Body = rate
+				wsMsg.Payload = rate
+			case "count-*":
+				wsMsg.Payload = msg.Payload
 			}
 
-			if err := conn.WriteJSON(payload); err != nil {
+			if err := conn.WriteJSON(wsMsg); err != nil {
 				return errors.WithStack(err)
 			}
 		}
@@ -169,7 +186,7 @@ func rootHandler(cfg *config) http.HandlerFunc {
 				return err
 			}
 
-			if err := cfg.store.queueFetch(ctx, repoFetchItem{Owner: owner, Name: repo}); err != nil {
+			if err := cfg.store.addFetchItemToQueue(ctx, repoFetchItem{Owner: owner, Name: repo}); err != nil {
 				return err
 			}
 		case len(split) >= 2 && split[1] != "":
@@ -178,7 +195,7 @@ func rootHandler(cfg *config) http.HandlerFunc {
 			if err != nil {
 				return err
 			}
-			if err := cfg.store.queueFetch(ctx, userFetchItem{Login: user}); err != nil {
+			if err := cfg.store.addFetchItemToQueue(ctx, userFetchItem{Login: user}); err != nil {
 				return err
 			}
 		default:

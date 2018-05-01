@@ -89,11 +89,17 @@ func (f *fetcher) work(ctx context.Context) error {
 	if _, err := tx.Exec(`delete from fetch_queue where id = $1`, fetchItem.ID); err != nil {
 		return errors.WithStack(err)
 	}
+	if err := f.cache.updateCount(fetchItem.Type, -1); err != nil {
+		return err
+	}
 
 	if fetchErr != nil {
 		if fetchItem.Retry <= 2 {
 			if _, err := tx.Exec(`insert into fetch_queue(type, payload, retry) values($1, $2, $3)`, fetchItem.Type, fetchItem.Payload, fetchItem.Retry+1); err != nil {
 				return errors.WithStack(err)
+			}
+			if err := f.cache.updateCount(fetchItem.Type, 1); err != nil {
+				return err
 			}
 		} else {
 			// TODO: alert?
@@ -135,13 +141,13 @@ func (f *fetcher) searchIssues(ctx context.Context, user string, page int) error
 			return err
 		}
 
-		if err := f.store.queueFetch(ctx, issueFetchItem{URL: issue.GetURL()}); err != nil {
+		if err := f.store.addFetchItemToQueue(ctx, issueFetchItem{URL: issue.GetURL()}); err != nil {
 			return err
 		}
 	}
 
 	if resp.NextPage > opts.ListOptions.Page {
-		return f.store.queueFetch(ctx, userFetchItem{Login: user, Page: resp.NextPage})
+		return f.store.addFetchItemToQueue(ctx, userFetchItem{Login: user, Page: resp.NextPage})
 	}
 	return nil
 }
@@ -176,13 +182,13 @@ func (f *fetcher) listIssues(ctx context.Context, owner, repo string, page int) 
 			return err
 		}
 
-		if err := f.store.queueFetch(ctx, issueFetchItem{URL: issue.GetURL()}); err != nil {
+		if err := f.store.addFetchItemToQueue(ctx, issueFetchItem{URL: issue.GetURL()}); err != nil {
 			return err
 		}
 	}
 
 	if resp.NextPage > opts.ListOptions.Page {
-		return f.store.queueFetch(ctx, repoFetchItem{Owner: owner, Name: repo, Page: resp.NextPage})
+		return f.store.addFetchItemToQueue(ctx, repoFetchItem{Owner: owner, Name: repo, Page: resp.NextPage})
 	}
 	return nil
 }
@@ -224,7 +230,7 @@ func (f *fetcher) listComments(ctx context.Context, issueURL string, page int) e
 	}
 
 	if resp.NextPage > opts.ListOptions.Page {
-		return f.store.queueFetch(ctx, issueFetchItem{URL: issueURL, Page: resp.NextPage})
+		return f.store.addFetchItemToQueue(ctx, issueFetchItem{URL: issueURL, Page: resp.NextPage})
 	}
 	return nil
 }

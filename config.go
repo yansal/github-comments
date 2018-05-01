@@ -26,13 +26,6 @@ type config struct {
 func newConfig() *config {
 	cfg := new(config)
 
-	databaseURL := os.Getenv("DATABASE_URL")
-	if databaseURL == "" {
-		databaseURL = "host=/tmp"
-	}
-	cfg.databaseURL = databaseURL
-	cfg.store = newStore(sqlx.MustConnect("postgres", cfg.databaseURL))
-
 	redisURL := os.Getenv("REDIS_URL")
 	if redisURL == "" {
 		redisURL = "redis://:6379"
@@ -48,6 +41,13 @@ func newConfig() *config {
 		panic(err)
 	}
 	cfg.cache = newCache(redis)
+
+	databaseURL := os.Getenv("DATABASE_URL")
+	if databaseURL == "" {
+		databaseURL = "host=/tmp"
+	}
+	cfg.databaseURL = databaseURL
+	cfg.store = newStore(sqlx.MustConnect("postgres", cfg.databaseURL), cfg.cache)
 
 	port := os.Getenv("PORT")
 	if port == "" {

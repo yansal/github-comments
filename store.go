@@ -11,11 +11,17 @@ import (
 	"github.com/pkg/errors"
 )
 
-func newStore(db *sqlx.DB) *store {
-	return &store{db}
+func newStore(db *sqlx.DB, cache *cache) *store {
+	return &store{
+		db:    db,
+		cache: cache,
+	}
 }
 
-type store struct{ db *sqlx.DB }
+type store struct {
+	db    *sqlx.DB
+	cache *cache
+}
 
 type comment struct {
 	Comment github.IssueComment
@@ -202,18 +208,11 @@ func (userFetchItem) Type() string {
 	return "user"
 }
 
-func (s *store) queueFetch(ctx context.Context, p fetchItem) error {
-	_, err := s.db.ExecContext(ctx, `insert into fetch_queue(type, payload) values($1, $2) on conflict do nothing`, p.Type(), p.Payload())
-	return errors.WithStack(err)
-}
-
-type fetchQueueCount struct {
-	Type  string
-	Count int
-}
-
-func (s *store) countFetchQueue(ctx context.Context) ([]fetchQueueCount, error) {
-	var counts []fetchQueueCount
-	err := s.db.SelectContext(ctx, &counts, `select type, count(*) from fetch_queue group by type order by type`)
-	return counts, errors.WithStack(err)
+func (s *store) addFetchItemToQueue(ctx context.Context, i fetchItem) error {
+	// TODO: use a db transaction so that we don't insert if we have an error with the cache?
+	_, err := s.db.ExecContext(ctx, `insert into fetch_queue(type, payload) values($1, $2) on conflict do nothing`, i.Type(), i.Payload())
+	if err != nil {
+		return errors.WithStack(err)
+	}
+	return s.cache.updateCount(i.Type(), 1)
 }

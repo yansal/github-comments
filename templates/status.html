@@ -1,9 +1,9 @@
 {{template "head" .}}
 
 <h2>Number of queued items to fetch:</h2>
-{{range .Counts}}
-<div>{{.Type}}: {{.Count}}</div>
-{{end}}
+<div>issue: <span id='count-issue'>{{.IssueCount}}</span></div>
+<div>repo: <span id='count-repo'>{{.RepoCount}}</span></div>
+<div>user: <span id='count-user'>{{.UserCount}}</span></div>
 
 <h2>GitHub stats</h2>
 <h3>Rate limits</h3>
@@ -29,19 +29,21 @@ if (location.protocol != 'https:') {
 const ws = new WebSocket(proto + '//' + location.host + '/_ws');
 
 ws.addEventListener('message', function (event) {
-    var payload = JSON.parse(event.data);
+    var msg = JSON.parse(event.data);
 
-    if (payload.channel == 'github-requests') {
+    if (msg.channel == 'github-requests') {
         var p = document.createElement('code');
-        var text = document.createTextNode(payload.body);
+        var text = document.createTextNode(msg.payload);
         p.appendChild(text);
         p.appendChild(document.createElement('br'));
         requestlog.prepend(p);
-    } else if (payload.channel == 'github-core-rate' || payload.channel == 'github-search-rate') {
-        document.getElementById(payload.channel).classList.remove('display-none')
-        document.getElementById(payload.channel + '-remaining').textContent = payload.body.remaining;
-        document.getElementById(payload.channel + '-limit').textContent = payload.body.limit;
-        document.getElementById(payload.channel + '-reset').textContent = payload.body.reset;
+    } else if (msg.pattern == 'github-*-rate') {
+        document.getElementById(msg.channel).classList.remove('display-none')
+        document.getElementById(msg.channel + '-remaining').textContent = msg.payload.remaining;
+        document.getElementById(msg.channel + '-limit').textContent = msg.payload.limit;
+        document.getElementById(msg.channel + '-reset').textContent = msg.payload.reset;
+    } else if (msg.pattern == 'count-*') {
+        document.getElementById(msg.channel).textContent = msg.payload;
     } else {
         console.log(event.data)
     }

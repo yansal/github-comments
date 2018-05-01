@@ -14,6 +14,13 @@ type cache struct{ redis *redis.Client }
 
 func newCache(redis *redis.Client) *cache { return &cache{redis: redis} }
 
+func (c *cache) Incr(key string) (int64, error) {
+	return c.redis.Incr(key).Result()
+}
+func (c *cache) IncrBy(key string, value int64) (int64, error) {
+	return c.redis.IncrBy(key, value).Result()
+}
+
 func (c *cache) LPush(key string, value interface{}) error {
 	return c.redis.LPush(key, value).Err()
 }
@@ -82,7 +89,7 @@ func (r githubRequest) String() string {
 
 func (c *cache) sendToRequestLog(message string, opts github.ListOptions, resp *github.Response, duration time.Duration) error {
 	now := time.Now()
-	incr, err := c.redis.Incr("github-requests-id").Result()
+	incr, err := c.Incr("github-requests-id")
 	if err != nil {
 		return err
 	}
@@ -120,4 +127,13 @@ func (c *cache) updateRate(key string, rate github.Rate) error {
 
 	}
 	return c.Publish(key, githubRate(rate))
+}
+
+func (c *cache) updateCount(fetchItemType string, incr int64) error {
+	key := "count-" + fetchItemType
+	count, err := c.IncrBy(key, incr)
+	if err != nil {
+		return errors.WithStack(err)
+	}
+	return c.Publish(key, count)
 }
