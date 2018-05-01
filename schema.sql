@@ -14,9 +14,10 @@ create type fetch_type as enum ('issue', 'repo', 'user');
 create table fetch_queue(
   id bigserial primary key,
   type fetch_type not null,
-  payload jsonb not null unique,
+  payload jsonb not null,
   created_at timestamp with time zone not null default current_timestamp,
-  retry int not null default 0
+  retry int not null default 0,
+  unique(payload, retry)
 );
 
 create function notify_fetcher()
