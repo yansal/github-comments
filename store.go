@@ -11,17 +11,11 @@ import (
 	"github.com/pkg/errors"
 )
 
-func newStore(db *sqlx.DB, cache *cache) *store {
-	return &store{
-		db:    db,
-		cache: cache,
-	}
+func newStore(db *sqlx.DB) *store {
+	return &store{db: db}
 }
 
-type store struct {
-	db    *sqlx.DB
-	cache *cache
-}
+type store struct{ db *sqlx.DB }
 
 type comment struct {
 	Comment github.IssueComment

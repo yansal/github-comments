@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"net/http"
 	"os"
 	"strconv"
 	"text/template"
@@ -14,19 +15,16 @@ import (
 	blackfriday "gopkg.in/russross/blackfriday.v2"
 )
 
-type config struct {
-	store        *store
-	cache        *cache
-	broker       *broker
-	receiver     *receiver
-	fetcher      *fetcher
-	port         string
-	githubClient *github.Client
-	template     *template.Template
+type app struct {
+	receiver *receiver
+	fetcher  *fetcher
+
+	port string
+	mux  *http.ServeMux
 }
 
-func newConfig() *config {
-	cfg := new(config)
+func newApp() *app {
+	app := new(app)
 
 	redisURL := os.Getenv("REDIS_URL")
 	if redisURL == "" {
@@ -42,25 +40,19 @@ func newConfig() *config {
 	if err := redis.Ping().Err(); err != nil {
 		panic(err)
 	}
-	cfg.cache = newCache(redis)
-	cfg.broker = newBroker(redis)
-	cfg.receiver = newReceiver(redis)
+	cache := newCache(redis)
+	broker := newBroker(redis)
 
 	databaseURL := os.Getenv("DATABASE_URL")
 	if databaseURL == "" {
 		databaseURL = "host=/tmp"
 	}
-	cfg.store = newStore(sqlx.MustConnect("postgres", databaseURL), cfg.cache)
+	store := newStore(sqlx.MustConnect("postgres", databaseURL))
 
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
-	}
-	cfg.port = port
-
+	var githubClient *github.Client
 	githubToken := os.Getenv("GITHUB_TOKEN")
 	if githubToken != "" {
-		cfg.githubClient = github.NewClient(
+		githubClient = github.NewClient(
 			oauth2.NewClient(
 				context.Background(),
 				oauth2.StaticTokenSource(
@@ -71,12 +63,13 @@ func newConfig() *config {
 			),
 		)
 	} else {
-		cfg.githubClient = github.NewClient(nil)
+		githubClient = github.NewClient(nil)
 	}
 
-	cfg.fetcher = newFetcher(cfg)
+	app.receiver = newReceiver(redis)
+	app.fetcher = newFetcher(broker, cache, store, githubClient)
 
-	cfg.template = template.Must(template.New("").Funcs(template.FuncMap{
+	template := template.Must(template.New("").Funcs(template.FuncMap{
 		"markdown": func(in string) string {
 			return string(blackfriday.Run(
 				[]byte(in),
@@ -85,5 +78,11 @@ func newConfig() *config {
 		},
 	}).ParseGlob("templates/*.html"))
 
-	return cfg
+	app.port = os.Getenv("PORT")
+	if app.port == "" {
+		app.port = "8080"
+	}
+	app.mux = newMux(broker, cache, store, template)
+
+	return app
 }

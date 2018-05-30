@@ -21,13 +21,8 @@ type fetcher struct {
 	githubClient *github.Client
 }
 
-func newFetcher(cfg *config) *fetcher {
-	return &fetcher{
-		broker:       cfg.broker,
-		cache:        cfg.cache,
-		store:        cfg.store,
-		githubClient: cfg.githubClient,
-	}
+func newFetcher(broker *broker, cache *cache, store *store, githubClient *github.Client) *fetcher {
+	return &fetcher{broker: broker, cache: cache, store: store, githubClient: githubClient}
 }
 
 func (f *fetcher) fetch(ctx context.Context, b []byte) error {

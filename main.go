@@ -13,8 +13,7 @@ import (
 
 func main() {
 	log.SetFlags(log.Lshortfile)
-
-	cfg := newConfig()
+	app := newApp()
 	g, ctx := errgroup.WithContext(context.Background())
 
 	// Signal handler
@@ -29,8 +28,8 @@ func main() {
 		}
 	})
 
-	g.Go(server(ctx, cfg))
-	g.Go(worker(ctx, cfg.receiver, "queue-fetch", cfg.fetcher.fetch))
+	g.Go(server(ctx, app.port, app.mux))
+	g.Go(worker(ctx, app.receiver, "queue-fetch", app.fetcher.fetch))
 
 	if err := g.Wait(); err != nil {
 		log.Fatalf("%+v", err)
