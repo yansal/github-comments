@@ -10,27 +10,4 @@ create index comments_user_login_idx on comments ((j#>>'{user,login}'));
 create index comments_issue_url_idx on comments ((j->>'issue_url'));
 create index comments_repo on comments (repo);
 
-create type fetch_type as enum ('issue', 'repo', 'user');
-create table fetch_queue(
-  id bigserial primary key,
-  type fetch_type not null,
-  payload jsonb not null,
-  created_at timestamp with time zone not null default current_timestamp,
-  retry int not null default 0,
-  unique(payload, retry)
-);
-
-create function notify_fetcher()
-  returns trigger
-  as $$
-  begin
-    notify fetcher;
-    return null;
-  end;
-$$ language plpgsql;
-
-create trigger notify_fetcher after insert
-  on fetch_queue
-execute procedure notify_fetcher();
-
 commit;

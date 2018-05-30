@@ -5,11 +5,11 @@ import (
 	"os"
 	"strconv"
 	"text/template"
-	"time"
 
 	"github.com/go-redis/redis"
 	"github.com/google/go-github/github"
 	"github.com/jmoiron/sqlx"
+	_ "github.com/lib/pq"
 	"golang.org/x/oauth2"
 	blackfriday "gopkg.in/russross/blackfriday.v2"
 )
@@ -17,7 +17,9 @@ import (
 type config struct {
 	store        *store
 	cache        *cache
-	databaseURL  string
+	broker       *broker
+	receiver     *receiver
+	fetcher      *fetcher
 	port         string
 	githubClient *github.Client
 	template     *template.Template
@@ -41,13 +43,14 @@ func newConfig() *config {
 		panic(err)
 	}
 	cfg.cache = newCache(redis)
+	cfg.broker = newBroker(redis)
+	cfg.receiver = newReceiver(redis)
 
 	databaseURL := os.Getenv("DATABASE_URL")
 	if databaseURL == "" {
 		databaseURL = "host=/tmp"
 	}
-	cfg.databaseURL = databaseURL
-	cfg.store = newStore(sqlx.MustConnect("postgres", cfg.databaseURL), cfg.cache)
+	cfg.store = newStore(sqlx.MustConnect("postgres", databaseURL), cfg.cache)
 
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -71,15 +74,14 @@ func newConfig() *config {
 		cfg.githubClient = github.NewClient(nil)
 	}
 
+	cfg.fetcher = newFetcher(cfg)
+
 	cfg.template = template.Must(template.New("").Funcs(template.FuncMap{
 		"markdown": func(in string) string {
 			return string(blackfriday.Run(
 				[]byte(in),
 				blackfriday.WithExtensions(blackfriday.CommonExtensions|blackfriday.HardLineBreak),
 			))
-		},
-		"until": func(t time.Time) string {
-			return time.Until(t).Truncate(time.Second).String()
 		},
 	}).ParseGlob("templates/*.html"))
 

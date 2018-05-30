@@ -29,13 +29,8 @@ func main() {
 		}
 	})
 
-	// HTTP server
 	g.Go(server(ctx, cfg))
-
-	// GitHub fetchers
-	for i := 0; i < 2; i++ {
-		g.Go(listener(ctx, cfg, fetch, "fetcher"))
-	}
+	g.Go(worker(ctx, cfg.receiver, "queue-fetch", cfg.fetcher.fetch))
 
 	if err := g.Wait(); err != nil {
 		log.Fatalf("%+v", err)

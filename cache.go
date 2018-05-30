@@ -1,8 +1,6 @@
 package main
 
 import (
-	"encoding/json"
-	"fmt"
 	"time"
 
 	"github.com/go-redis/redis"
@@ -55,40 +53,6 @@ func (c *cache) Set(key string, value interface{}, expiration time.Duration) err
 	return errors.WithStack(c.redis.Set(key, value, expiration).Err())
 }
 
-type githubRequest struct {
-	ID          int64
-	Timestamp   time.Time
-	Message     string
-	ListOptions github.ListOptions
-	StatusCode  int
-	LastPage    int
-	Duration    time.Duration
-}
-
-func (r *githubRequest) MarshalBinary() ([]byte, error) {
-	return json.Marshal(r)
-}
-
-func (r *githubRequest) UnmarshalBinary(data []byte) error {
-	return json.Unmarshal(data, r)
-}
-
-func (r githubRequest) String() string {
-	message := r.Message
-	if r.StatusCode == 200 {
-		page := r.ListOptions.Page
-		if page == 0 {
-			page = 1
-		}
-		lastPage := r.LastPage
-		if lastPage == 0 {
-			lastPage = page
-		}
-		message = fmt.Sprintf("%s (%d/%d)", message, page, lastPage)
-	}
-	return fmt.Sprintf("ts=%s msg=%q status=%d duration=%s", r.Timestamp.Format(time.RFC3339), message, r.StatusCode, r.Duration)
-}
-
 func (c *cache) sendToRequestLog(message string, opts github.ListOptions, resp *github.Response, duration time.Duration) error {
 	now := time.Now()
 	incr, err := c.Incr("github-requests-id")
@@ -113,29 +77,10 @@ func (c *cache) sendToRequestLog(message string, opts github.ListOptions, resp *
 	return c.Publish("github-requests", r)
 }
 
-type githubRate github.Rate
-
-func (r githubRate) MarshalBinary() ([]byte, error) {
-	return json.Marshal(r)
-}
-
-func (r githubRate) UnmarshalBinary(data []byte) error {
-	return json.Unmarshal(data, r)
-}
-
 func (c *cache) updateRate(key string, rate github.Rate) error {
 	if err := c.Set(key, githubRate(rate), time.Until(rate.Reset.Time)); err != nil {
 		return err
 
 	}
 	return c.Publish(key, githubRate(rate))
-}
-
-func (c *cache) updateCount(fetchItemType string, incr int64) error {
-	key := "count-" + fetchItemType
-	count, err := c.IncrBy(key, incr)
-	if err != nil {
-		return err
-	}
-	return c.Publish(key, count)
 }

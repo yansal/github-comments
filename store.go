@@ -160,34 +160,3 @@ func (s *store) insertIssue(ctx context.Context, issue *github.Issue) error {
 	where (issues.j->>'updated_at')::timestamp < (excluded.j->>'updated_at')::timestamp`, j)
 	return errors.Wrapf(err, "couldn't insert issue %s", issue.GetURL())
 }
-
-type fetchItem struct {
-	ID      int64
-	Payload []byte
-	Type    string
-	Retry   int
-}
-
-type issuePayload struct {
-	URL  string
-	Page int
-}
-
-type repoPayload struct {
-	Owner, Name string
-	Page        int
-}
-
-type userPayload struct {
-	Login string
-	Page  int
-}
-
-func (s *store) addFetchItemToQueue(ctx context.Context, item fetchItem) error {
-	// TODO: use a db transaction so that we don't insert if we have an error with the cache?
-	_, err := s.db.ExecContext(ctx, `insert into fetch_queue(type, payload, retry) values($1, $2, $3) on conflict do nothing`, item.Type, item.Payload, item.Retry)
-	if err != nil {
-		return errors.WithStack(err)
-	}
-	return s.cache.updateCount(item.Type, 1)
-}

@@ -186,8 +186,7 @@ func rootHandler(cfg *config) http.HandlerFunc {
 				return err
 			}
 
-			payload, _ := json.Marshal(repoPayload{Owner: owner, Name: repo})
-			if err := cfg.store.addFetchItemToQueue(ctx, fetchItem{Type: "repo", Payload: payload}); err != nil {
+			if err := cfg.broker.Publish("queue-fetch", repoPayload{Owner: owner, Name: repo}); err != nil {
 				return err
 			}
 		case len(split) >= 2 && split[1] != "":
@@ -196,8 +195,7 @@ func rootHandler(cfg *config) http.HandlerFunc {
 			if err != nil {
 				return err
 			}
-			payload, _ := json.Marshal(userPayload{Login: user})
-			if err := cfg.store.addFetchItemToQueue(ctx, fetchItem{Type: "user", Payload: payload}); err != nil {
+			if err := cfg.broker.Publish("queue-fetch", userPayload{Login: user}); err != nil {
 				return err
 			}
 		default:
