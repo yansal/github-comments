@@ -52,7 +52,7 @@ func (f *fetcher) fetch(ctx context.Context, b []byte) error {
 		}
 		ferr = f.fetchRepo(ctx, r)
 	default:
-		return errors.Errorf("dont know what to do with payload of type %v", p.Type)
+		return errors.Errorf("don't know what to do with payload of type %v", p.Type)
 	}
 
 	if rlerr, ok := errors.Cause(ferr).(*github.RateLimitError); ok {
