@@ -116,39 +116,57 @@ func wsHandler(cache *cache) http.HandlerFunc {
 		}
 		defer conn.Close()
 
+		wsc := make(chan struct{})
+		go func() {
+			for {
+				_, _, err := conn.ReadMessage()
+				if _, ok := err.(*websocket.CloseError); ok {
+					close(wsc)
+					return
+				} else if err != nil {
+					log.Printf("%+v\n", err)
+				}
+			}
+		}()
+
 		// TODO: abstract redis pubsub in cache
 		pubsub := cache.redis.PSubscribe("github-requests", "github-*-rate", "count-*")
 		defer pubsub.Close()
 
-		for msg := range pubsub.Channel() {
-			wsMsg := struct {
-				Channel string      `json:"channel"`
-				Pattern string      `json:"pattern"`
-				Payload interface{} `json:"payload"`
-			}{Channel: msg.Channel, Pattern: msg.Pattern}
+		pubsubc := pubsub.Channel()
+		for {
+			select {
+			case <-wsc: // websocket is closed
+				return nil
+			case msg := <-pubsubc:
+				wsMsg := struct {
+					Channel string      `json:"channel"`
+					Pattern string      `json:"pattern"`
+					Payload interface{} `json:"payload"`
+				}{Channel: msg.Channel, Pattern: msg.Pattern}
 
-			switch msg.Pattern {
-			case "github-requests":
-				var r githubRequest
-				if err := json.Unmarshal([]byte(msg.Payload), &r); err != nil {
+				switch msg.Pattern {
+				case "github-requests":
+					var r githubRequest
+					if err := json.Unmarshal([]byte(msg.Payload), &r); err != nil {
+						return errors.WithStack(err)
+					}
+					wsMsg.Payload = r.String()
+				case "github-*-rate":
+					var rate github.Rate
+					if err := json.Unmarshal([]byte(msg.Payload), &rate); err != nil {
+						return errors.WithStack(err)
+					}
+					wsMsg.Payload = rate
+				case "count-*":
+					wsMsg.Payload = msg.Payload
+				}
+
+				if err := conn.WriteJSON(wsMsg); err != nil {
 					return errors.WithStack(err)
 				}
-				wsMsg.Payload = r.String()
-			case "github-*-rate":
-				var rate github.Rate
-				if err := json.Unmarshal([]byte(msg.Payload), &rate); err != nil {
-					return errors.WithStack(err)
-				}
-				wsMsg.Payload = rate
-			case "count-*":
-				wsMsg.Payload = msg.Payload
-			}
-
-			if err := conn.WriteJSON(wsMsg); err != nil {
-				return errors.WithStack(err)
 			}
 		}
-		return nil
 	})
 }
 
