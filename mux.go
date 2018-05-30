@@ -37,30 +37,23 @@ func handleError(h handlerFunc) http.HandlerFunc {
 func statusHandler(cache *cache, template *template.Template) http.HandlerFunc {
 	return handleError(func(w http.ResponseWriter, r *http.Request) error {
 		var data struct {
-			IssueCount, RepoCount, UserCount int
-			CoreRate, SearchRate             *github.Rate
-			Requests                         []githubRequest
+			QueueFetchCount, QueueFetchProcessingCount int
+			CoreRate, SearchRate                       *github.Rate
+			Requests                                   []githubRequest
 		}
 
-		b, err := cache.Get("count-issue")
+		b, err := cache.Get("queue-fetch-count")
 		if err != nil {
 			log.Print(err)
 		} else if b != nil {
-			data.IssueCount, _ = strconv.Atoi(string(b))
+			data.QueueFetchCount, _ = strconv.Atoi(string(b))
 		}
 
-		b, err = cache.Get("count-repo")
+		b, err = cache.Get("queue-fetch-processing-count")
 		if err != nil {
 			log.Print(err)
 		} else if b != nil {
-			data.RepoCount, _ = strconv.Atoi(string(b))
-		}
-
-		b, err = cache.Get("count-user")
-		if err != nil {
-			log.Print(err)
-		} else if b != nil {
-			data.UserCount, _ = strconv.Atoi(string(b))
+			data.QueueFetchProcessingCount, _ = strconv.Atoi(string(b))
 		}
 
 		b, err = cache.Get("github-search-rate")
@@ -130,7 +123,7 @@ func wsHandler(cache *cache) http.HandlerFunc {
 		}()
 
 		// TODO: abstract redis pubsub in cache
-		pubsub := cache.redis.PSubscribe("github-requests", "github-*-rate", "count-*")
+		pubsub := cache.redis.PSubscribe("github-requests", "github-*-rate", "queue-*-count")
 		defer pubsub.Close()
 
 		pubsubc := pubsub.Channel()
@@ -158,7 +151,7 @@ func wsHandler(cache *cache) http.HandlerFunc {
 						return errors.WithStack(err)
 					}
 					wsMsg.Payload = rate
-				case "count-*":
+				case "queue-*-count":
 					wsMsg.Payload = msg.Payload
 				}
 

@@ -30,6 +30,9 @@ func (r *receiver) Consume(ctx context.Context, queue string, f handler) error {
 
 func (r *receiver) consumeLoop(ctx context.Context, queue string, f handler, cerr chan error) {
 	processing := queue + "-processing"
+	go r.updateCountLoop(ctx, queue)
+	go r.updateCountLoop(ctx, processing)
+
 	// TODO: republish message in processing back to queue?
 
 	type msg struct {
@@ -70,6 +73,23 @@ func (r *receiver) consumeLoop(ctx context.Context, queue string, f handler, cer
 		if err := r.redis.LRem(processing, 0, payload).Err(); err != nil {
 			cerr <- errors.WithStack(err)
 			return
+		}
+	}
+}
+
+func (r *receiver) updateCountLoop(ctx context.Context, key string) {
+	for range time.Tick(time.Second) {
+		length, err := r.redis.LLen(key).Result()
+		if err != nil {
+			log.Printf("%+v\n", err)
+			continue
+		}
+		if err := r.redis.Set(key+"-count", length, 0).Err(); err != nil {
+			log.Printf("%+v\n", err)
+			continue
+		}
+		if err := r.redis.Publish(key+"-count", length).Err(); err != nil {
+			log.Printf("%+v\n", err)
 		}
 	}
 }

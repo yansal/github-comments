@@ -1,9 +1,8 @@
 {{template "head" .}}
 
 <h2>Number of queued items to fetch</h2>
-<div>issue: <span id='count-issue'>{{.IssueCount}}</span></div>
-<div>repo: <span id='count-repo'>{{.RepoCount}}</span></div>
-<div>user: <span id='count-user'>{{.UserCount}}</span></div>
+<div>queue: <span id='queue-fetch-count'>{{.QueueFetchCount}}</span></div>
+<div>processing: <span id='queue-fetch-processing-count'>{{.QueueFetchProcessingCount}}</span></div>
 
 <h2>GitHub stats</h2>
 <h3>Rate limits</h3>
@@ -41,7 +40,7 @@ ws.addEventListener('message', function (event) {
         document.getElementById(msg.channel + '-remaining').textContent = msg.payload.remaining;
         document.getElementById(msg.channel + '-limit').textContent = msg.payload.limit;
         document.getElementById(msg.channel + '-reset').textContent = msg.payload.reset;
-    } else if (msg.pattern == 'count-*') {
+    } else if (msg.pattern == 'queue-*-count') {
         document.getElementById(msg.channel).textContent = msg.payload;
     } else {
         console.log(event.data)
