@@ -30,8 +30,6 @@ func (r *receiver) Consume(ctx context.Context, queue string, f handler) error {
 
 func (r *receiver) consumeLoop(ctx context.Context, queue string, f handler, cerr chan error) {
 	processing := queue + "-processing"
-	go r.updateCountLoop(ctx, queue)
-	go r.updateCountLoop(ctx, processing)
 
 	// TODO: republish message in processing back to queue?
 
@@ -60,6 +58,16 @@ func (r *receiver) consumeLoop(ctx context.Context, queue string, f handler, cer
 				cerr <- errors.WithStack(err)
 				return
 			}
+
+			if err := r.incrByAndPublish(queue+"-count", -1); err != nil {
+				cerr <- err
+				return
+			}
+			if err := r.incrByAndPublish(processing+"-count", 1); err != nil {
+				cerr <- err
+				return
+			}
+
 			payload = msg.bytes
 		}
 
@@ -70,26 +78,23 @@ func (r *receiver) consumeLoop(ctx context.Context, queue string, f handler, cer
 			continue
 		}
 
-		if err := r.redis.LRem(processing, 0, payload).Err(); err != nil {
+		res, err := r.redis.LRem(processing, 0, payload).Result()
+		if err != nil {
 			cerr <- errors.WithStack(err)
+			return
+		}
+
+		if err := r.incrByAndPublish(processing+"-count", -res); err != nil {
+			cerr <- err
 			return
 		}
 	}
 }
 
-func (r *receiver) updateCountLoop(ctx context.Context, key string) {
-	for range time.Tick(time.Second) {
-		length, err := r.redis.LLen(key).Result()
-		if err != nil {
-			log.Printf("%+v\n", err)
-			continue
-		}
-		if err := r.redis.Set(key+"-count", length, 0).Err(); err != nil {
-			log.Printf("%+v\n", err)
-			continue
-		}
-		if err := r.redis.Publish(key+"-count", length).Err(); err != nil {
-			log.Printf("%+v\n", err)
-		}
+func (r *receiver) incrByAndPublish(key string, value int64) error {
+	res, err := r.redis.IncrBy(key, value).Result()
+	if err != nil {
+		return errors.WithStack(err)
 	}
+	return errors.WithStack(r.redis.Publish(key, res).Err())
 }
